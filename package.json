@@ -1,13 +1,37 @@
 {
   "name": "veo3auto",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Veo3 Automation Desktop App",
+  "main": "main.js",
+  "author": "Veo3 Team",
+  "build": {
+    "appId": "com.veo3.auto",
+    "productName": "Veo3 Auto",
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "public/favicon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "files": [
+      "**/*",
+      "!dist/**/*",
+      "!node_modules/puppeteer/.local-chromium/**/*"
+    ],
+    "asar": true
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "electron .",
+    "dist": "electron-builder"
   },
   "keywords": [],
-  "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
@@ -19,5 +43,10 @@
     "puppeteer-real-browser": "^1.4.4",
     "socket.io": "^4.8.3",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "electron": "^34.1.1",
+    "electron-builder": "^25.1.8",
+    "pkg": "^5.8.1"
   }
 }

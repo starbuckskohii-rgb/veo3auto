@@ -98,9 +98,5 @@ io.on('connection', (socket) => {
 const PORT = 3001;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running at http://localhost:${PORT}`);
-    // Open browser automatically
-    const open = require('open'); // Need to require open if installed, or just exec 'start'
-    try {
-        execSync(`start http://localhost:${PORT}`);
-    } catch (e) { }
+    // Browser opened by Electron Main Process
 });
