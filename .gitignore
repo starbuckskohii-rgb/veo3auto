@@ -1,0 +1,14 @@
+node_modules/
+user_data/
+*.log
+.env
+.DS_Store
+*.tmp
+temp_clip.txt
+Output/
+videooooooo/
+card_debug_*.html
+debug_*.png
+page_dump.html
+page_snapshot.png
+*.crdownload
