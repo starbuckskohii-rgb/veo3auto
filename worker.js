@@ -154,39 +154,53 @@ class AutomationWorker {
             await this.sleep(1000);
 
             // 3. Generate
-            this.log('Clicking Generate...');
+            this.log('Clicking Generate/Submit...');
             let clicked = false;
+
+            // Wait a bit for the button state to stabilize
+            await this.sleep(500);
+
+            // Attempt 1: Click the standard "Tạo" / "Generate" text button
             try {
-                const generateBtn = await page.waitForSelector('xpath///button[contains(., "Tạo") and not(@disabled)] | //button[contains(., "Generate") and not(@disabled)]', { timeout: 5000 });
+                const generateBtn = await page.waitForSelector('xpath///button[contains(., "Tạo") and not(@disabled)] | //button[contains(., "Generate") and not(@disabled)]', { timeout: 3000 });
                 await generateBtn.click();
                 clicked = true;
+                this.log('Clicked text button.');
             } catch (e) {
-                this.log('Tạo text button not found, trying icons or Enter...');
+                this.log('Text button not found, trying icons...');
             }
 
+            // Attempt 2: Find the submit arrow icon button based on aria-labels or SVG paths
             if (!clicked) {
-                clicked = await page.evaluate((sel) => {
-                    const input = document.querySelector(sel);
-                    if (input) {
-                        let parent = input.parentElement;
-                        for (let i = 0; i < 5; i++) {
-                            if (!parent) break;
-                            const btns = Array.from(parent.querySelectorAll('button:not([disabled])'));
-                            if (btns.length > 0) {
-                                // Rightmost button in the row usually is Send
-                                btns[btns.length - 1].click();
-                                return true;
-                            }
-                            parent = parent.parentElement;
+                clicked = await page.evaluate(() => {
+                    const buttons = Array.from(document.querySelectorAll('button:not([disabled])'));
+                    for (const btn of buttons) {
+                        const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+                        const svg = btn.querySelector('svg');
+
+                        // Look for typical submit indicators: play arrow, send, submit
+                        if (ariaLabel.includes('tạo') || ariaLabel.includes('gửi') || ariaLabel.includes('submit') || ariaLabel.includes('send') || ariaLabel.includes('generate')) {
+                            btn.click();
+                            return true;
+                        }
+
+                        // If it has an SVG and is near the text area (often the last button in the input group)
+                        if (svg && btn.closest('div').querySelector('textarea')) {
+                            btn.click();
+                            return true;
                         }
                     }
                     return false;
-                }, promptSelector);
+                });
+                if (clicked) this.log('Clicked icon button.');
             }
 
+            // Attempt 3: Fallback to pressing Enter inside the textarea
             if (!clicked) {
+                this.log('Pressing Enter as fallback...');
                 await page.focus(promptSelector);
-                this.log('Pressing Enter...');
+                // Sometimes shift+enter is new line, and enter is submit.
+                // Or ctrl+enter. Standardizing on Enter first.
                 await page.keyboard.press('Enter');
             }
 
