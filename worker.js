@@ -93,8 +93,26 @@ class AutomationWorker {
 
             this.log('Resetting state for new job...');
             try {
-                await page.goto('https://labs.google/fx/vi/tools/flow', { waitUntil: 'domcontentloaded', timeout: 30000 });
+                const url = await page.url();
+                if (!url.includes('https://labs.google/fx/vi/tools/flow')) {
+                    await page.goto('https://labs.google/fx/vi/tools/flow', { waitUntil: 'domcontentloaded', timeout: 30000 });
+                }
                 await this.sleep(3000);
+
+                // If we are stuck on the homepage, click "Dự án mới" (New Project)
+                const startBtn = await page.evaluateHandle(() => {
+                    const xpath = '//div[contains(text(), "Dự án mới")] | //button[contains(., "Dự án mới")] | //div[contains(text(), "New Project")]';
+                    const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                    return result.singleNodeValue;
+                });
+                if (startBtn && startBtn.click) {
+                    const inputVisible = await page.$('#PINHOLE_TEXT_AREA_ELEMENT_ID');
+                    if (!inputVisible) {
+                        this.log('Clicking New Project...');
+                        await startBtn.click();
+                        await this.sleep(3000);
+                    }
+                }
             } catch (e) {
                 this.log('Navigation took too long, proceeding anyway...');
             }
@@ -285,20 +303,7 @@ class AutomationWorker {
                     ctx.drawImage(bestImg, 0, 0);
                     return { data: canvas.toDataURL('image/png').split(',')[1], ext: '.png' };
                 } catch (e) {
-                    try {
-                        const res = await fetch(bestImg.src);
-                        const blob = await res.blob();
-                        return new Promise((resolve) => {
-                            const reader = new FileReader();
-                            reader.onloadend = () => {
-                                resolve({ data: reader.result.split(',')[1], ext: '.png' });
-                            };
-                            reader.onerror = () => resolve(null);
-                            reader.readAsDataURL(blob);
-                        });
-                    } catch (err) {
-                        return null;
-                    }
+                    return null; // Don't trigger blob download as it bypasses Puppeteer's path config
                 }
             });
 
