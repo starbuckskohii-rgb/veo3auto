@@ -15,6 +15,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 app.use(cors());
 
+const { autoUpdater } = require('electron-updater');
+autoUpdater.autoDownload = false; // We want to control the download
+autoUpdater.autoInstallOnAppQuit = true;
+
 // --- Utilities ---
 
 const { dialog, BrowserWindow } = require('electron');
@@ -142,10 +146,70 @@ app.post('/api/stop', async (req, res) => {
     res.json({ status: "stopped" });
 });
 
+app.get('/api/check-update', async (req, res) => {
+    try {
+        const updateCheckResult = await autoUpdater.checkForUpdates();
+        if (updateCheckResult && updateCheckResult.updateInfo) {
+            res.json({ status: "success", info: updateCheckResult.updateInfo });
+        } else {
+            res.json({ status: "no-update" });
+        }
+    } catch (e) {
+        console.error("Update check error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/download-update', async (req, res) => {
+    try {
+        // We trigger the download. 
+        // We will notify the client via socket when download is complete.
+        autoUpdater.downloadUpdate();
+        res.json({ status: "downloading" });
+    } catch (e) {
+        console.error("Download update error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/install-update', (req, res) => {
+    res.json({ status: "installing" });
+    setTimeout(() => {
+        autoUpdater.quitAndInstall();
+    }, 1000);
+});
+
 // --- Socket Connection ---
 io.on('connection', (socket) => {
     console.log('Client connected');
     socket.emit('log', 'Connected to server.');
+});
+
+// AutoUpdater events to socket
+autoUpdater.on('update-available', (info) => {
+    io.emit('log', `Update available: ${info.version}`);
+    io.emit('update-status', { status: 'available', version: info.version });
+});
+
+autoUpdater.on('update-not-available', (info) => {
+    io.emit('log', 'You are on the latest version.');
+    io.emit('update-status', { status: 'up-to-date' });
+});
+
+autoUpdater.on('error', (err) => {
+    io.emit('log', 'Error in auto-updater: ' + err.toString());
+    io.emit('update-status', { status: 'error', error: err.toString() });
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+    let log_message = `Download speed: ${Math.round(progressObj.bytesPerSecond / 1024)} KB/s`;
+    log_message = log_message + ' - Downloaded ' + Math.round(progressObj.percent) + '%';
+    io.emit('update-progress', { percent: progressObj.percent });
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+    io.emit('log', 'Update downloaded! Ready to install.');
+    io.emit('update-status', { status: 'downloaded' });
 });
 
 const PORT = 3001;

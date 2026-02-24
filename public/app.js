@@ -157,6 +157,68 @@ if (btnClearRetries) {
     });
 }
 
+const btnCheckUpdate = document.getElementById('btnCheckUpdate');
+if (btnCheckUpdate) {
+    btnCheckUpdate.addEventListener('click', async () => {
+        btnCheckUpdate.disabled = true;
+        btnCheckUpdate.textContent = 'Checking...';
+        try {
+            const res = await fetch('/api/check-update');
+            const data = await res.json();
+            if (data.status === 'success') {
+                if (confirm('Update available: ' + data.info.version + '.\nDo you want to download it now?')) {
+                    btnCheckUpdate.textContent = 'Downloading...';
+                    await fetch('/api/download-update', { method: 'POST' });
+                } else {
+                    btnCheckUpdate.disabled = false;
+                    btnCheckUpdate.textContent = '🔄 Check for Updates';
+                }
+            } else if (data.status === 'no-update') {
+                alert('You are already on the latest version.');
+                btnCheckUpdate.disabled = false;
+                btnCheckUpdate.textContent = '🔄 Check for Updates';
+            } else {
+                alert('Error checking update: ' + data.error);
+                btnCheckUpdate.disabled = false;
+                btnCheckUpdate.textContent = '🔄 Check for Updates';
+            }
+        } catch (e) {
+            alert('Failed to connect to server.');
+            btnCheckUpdate.disabled = false;
+            btnCheckUpdate.textContent = '🔄 Check for Updates';
+        }
+    });
+}
+
+socket.on('update-status', (info) => {
+    if (info.status === 'downloaded' && btnCheckUpdate) {
+        btnCheckUpdate.textContent = 'Install Update';
+        btnCheckUpdate.disabled = false;
+
+        // Remove old listeners and add install request
+        const newBtn = btnCheckUpdate.cloneNode(true);
+        btnCheckUpdate.parentNode.replaceChild(newBtn, btnCheckUpdate);
+        newBtn.onclick = async () => {
+            newBtn.textContent = 'Installing...';
+            newBtn.disabled = true;
+            await fetch('/api/install-update', { method: 'POST' });
+        };
+    } else if (info.status === 'error' && btnCheckUpdate) {
+        btnCheckUpdate.textContent = 'Update Error';
+        setTimeout(() => {
+            btnCheckUpdate.disabled = false;
+            btnCheckUpdate.textContent = '🔄 Check for Updates';
+        }, 3000);
+    }
+});
+
+socket.on('update-progress', (progress) => {
+    const btn = document.getElementById('btnCheckUpdate');
+    if (btn) {
+        btn.textContent = `Downloading... ${Math.round(progress.percent)}%`;
+    }
+});
+
 document.getElementById('btnClearLogs').addEventListener('click', () => {
     logsContent.innerHTML = '';
 });

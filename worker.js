@@ -39,10 +39,11 @@ class AutomationWorker {
                     '--no-first-run',
                     '--no-default-browser-check'
                 ],
-                customConfig: {},
+                customConfig: {
+                    userDataDir: this.profilePath
+                },
                 connectOption: { defaultViewport: null }
             };
-            options.args.push(`--user-data-dir=${this.profilePath}`);
             const result = await connect(options);
             this.browser = result.browser;
             this.page = result.page;
@@ -77,6 +78,20 @@ class AutomationWorker {
 
         try {
             await this.page.goto('https://labs.google/fx/vi/tools/flow', { waitUntil: 'networkidle2' });
+
+            const currentUrl = await this.page.url();
+            if (currentUrl.includes('accounts.google.com') || currentUrl.includes('AccountChooser') || currentUrl.includes('signin')) {
+                this.log('Login screen detected! You have 3 minutes to login manually.');
+                try {
+                    await this.page.waitForFunction(
+                        'window.location.href.includes("labs.google")',
+                        { timeout: 180000, polling: 1000 }
+                    );
+                    this.log('Login successful! Proceeding...');
+                } catch (timeoutErr) {
+                    this.log('Login wait timed out after 3 minutes.');
+                }
+            }
         } catch (e) { }
     }
 

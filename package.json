@@ -1,6 +1,6 @@
 {
   "name": "veo3auto",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Veo3 Automation Desktop App",
   "main": "main.js",
   "author": "Veo3 Team",
@@ -24,7 +24,14 @@
       "!dist/**/*",
       "!node_modules/puppeteer/.local-chromium/**/*"
     ],
-    "asar": true
+    "asar": true,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "starbuckskohii-rgb",
+        "repo": "veo3auto"
+      }
+    ]
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -37,6 +44,7 @@
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^17.2.4",
+    "electron-updater": "^6.8.3",
     "express": "^5.2.1",
     "open": "^11.0.0",
     "puppeteer": "^24.37.2",
