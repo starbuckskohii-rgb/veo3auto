@@ -106,6 +106,18 @@ class AutomationWorker {
             if (!this.page) await this.launch();
             const page = this.page;
 
+            // Enforce download path directly to outputDir via CDP
+            try {
+                this.log(`Setting download path to: ${outputDir}`);
+                const client = await page.target().createCDPSession();
+                await client.send('Page.setDownloadBehavior', {
+                    behavior: 'allow',
+                    downloadPath: outputDir
+                });
+            } catch (cdpErr) {
+                this.log(`Failed to set CDP download path: ${cdpErr.message}`);
+            }
+
             this.log('Resetting state for new job...');
             try {
                 const url = await page.url();
@@ -135,32 +147,102 @@ class AutomationWorker {
             const prompt = job.PROMPT;
 
             // 1. Switch Mode (Video vs Image)
-            if (job.TYPE_VIDEO === 'IMG') {
-                this.log('Switching to Image mode...');
-                await page.evaluate(() => {
-                    const btns = Array.from(document.querySelectorAll('button, div[role="button"], a[role="tab"]'));
-                    for (const b of btns) {
-                        const txt = b.textContent.trim().toLowerCase();
-                        if (txt === 'hình ảnh' || txt === 'image') {
-                            b.click();
-                            break;
+            await page.evaluate(async (isImg) => {
+                const targetTexts = isImg ? ['tạo hình ảnh', 'create image'] : ['từ văn bản sang video', 'text to video'];
+                const otherTexts = isImg ? ['từ văn bản sang video', 'text to video'] : ['tạo hình ảnh', 'create image'];
+
+                const findElByTextRegex = (texts) => {
+                    const all = Array.from(document.querySelectorAll('button, div[role="button"], div[role="combobox"], [role="option"], [role="menuitem"], a[role="tab"], div[class*="chip"]'));
+                    for (const el of all) {
+                        const txt = el.textContent.trim().toLowerCase();
+                        if (txt === 'hình ảnh' || txt === 'image') continue; // Skip top nav
+                        if (texts.some(t => txt.includes(t))) return el;
+                    }
+                    return null;
+                };
+
+                // Click the currently active chip to open the menu
+                let activeChip = findElByTextRegex([...targetTexts, ...otherTexts]);
+                if (activeChip && !activeChip.closest('[role="menu"]')) {
+                    const currentTxt = activeChip.textContent.trim().toLowerCase();
+                    const alreadyCorrect = targetTexts.some(t => currentTxt.includes(t));
+
+                    if (!alreadyCorrect) {
+                        activeChip.click(); // Open menu
+                        await new Promise(r => setTimeout(r, 1000));
+
+                        // Find the correct option in the opened menu
+                        const menuItems = Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"], [role="menu"] li, [role="listbox"] [role="option"]'));
+                        let found = false;
+                        for (const item of menuItems) {
+                            const itemTxt = item.textContent.trim().toLowerCase();
+                            if (targetTexts.some(t => itemTxt.includes(t))) {
+                                item.click();
+                                found = true;
+                                break;
+                            }
+                        }
+                        // Fallback if menu querySelector didn't work
+                        if (!found) {
+                            const options = findElByTextRegex(targetTexts);
+                            if (options) options.click();
                         }
                     }
-                });
-                await this.sleep(1000);
-            } else {
-                this.log('Switching to Video mode...');
-                await page.evaluate(() => {
-                    const btns = Array.from(document.querySelectorAll('button, div[role="button"], a[role="tab"]'));
-                    for (const b of btns) {
-                        const txt = b.textContent.trim().toLowerCase();
-                        if (txt === 'video') {
-                            b.click();
-                            break;
+                } else {
+                    // direct fallback
+                    const btn = findElByTextRegex(targetTexts);
+                    if (btn) btn.click();
+                }
+            }, job.TYPE_VIDEO === 'IMG');
+            this.log(`Switched to ${job.TYPE_VIDEO === 'IMG' ? 'Image' : 'Video'} mode...`);
+            await this.sleep(1500);
+
+            // Handle Aspect Ratio (Cỡ) from prompt
+            let cleanPrompt = prompt;
+            let targetRatio = null;
+            if (prompt.includes('16:9') || prompt.includes('16/9')) targetRatio = '16:9';
+            else if (prompt.includes('9:16') || prompt.includes('9/16')) targetRatio = '9:16';
+            else if (prompt.includes('1:1')) targetRatio = '1:1';
+            else if (prompt.includes('4:3') || prompt.includes('4/3')) targetRatio = '4:3';
+            else if (prompt.includes('3:4') || prompt.includes('3/4')) targetRatio = '3:4';
+
+            cleanPrompt = prompt.replace(/--ar\s+\d+[:-]\d+/gi, '').replace(/--ar \d+\/\d+/gi, '').trim();
+
+            if (targetRatio) {
+                this.log(`Attempting to set Aspect Ratio to ${targetRatio}...`);
+                try {
+                    await page.evaluate(async (ratio) => {
+                        // Find the aspect ratio button (usually next to the model chip, looks like a rectangle or has ratio text)
+                        // It may have aria-label like "Tỷ lệ khung hình", "Aspect ratio", "Dimensions"
+                        const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                        let ratioBtn = buttons.find(b => {
+                            const label = (b.getAttribute('aria-label') || '').toLowerCase();
+                            const title = (b.getAttribute('title') || '').toLowerCase();
+                            return label.includes('tỷ lệ') || label.includes('aspect') || label.includes('ratio') || label.includes('khung hình') || label.includes(ratio) || title.includes('tỷ lệ');
+                        });
+
+                        // If not found by aria-label, try to find by svg or inner text
+                        if (!ratioBtn) {
+                            ratioBtn = buttons.find(b => b.textContent.includes(ratio));
                         }
-                    }
-                });
-                await this.sleep(1000);
+
+                        if (ratioBtn) {
+                            ratioBtn.click();
+                            await new Promise(r => setTimeout(r, 1000));
+                            // Now find the option in the menu
+                            const options = Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"], [role="menu"] li, [role="listbox"] [role="option"]'));
+                            for (const opt of options) {
+                                if (opt.textContent.includes(ratio)) {
+                                    opt.click();
+                                    break;
+                                }
+                            }
+                        }
+                    }, targetRatio);
+                    await this.sleep(1000);
+                } catch (e) {
+                    this.log(`Failed to set aspect ratio: ${e.message}`);
+                }
             }
 
             // 2. Input
@@ -178,12 +260,12 @@ class AutomationWorker {
             }, promptSelector);
             await this.sleep(400);
 
-            this.log(`Typing prompt (Length: ${prompt.length})...`);
+            this.log(`Typing prompt (Length: ${cleanPrompt.length})...`);
             await page.evaluate((selector, text) => {
                 const el = document.querySelector(selector);
                 el.focus();
                 document.execCommand('insertText', false, text);
-            }, promptSelector, prompt);
+            }, promptSelector, cleanPrompt);
             await this.sleep(1000);
 
             // 3. Generate
@@ -193,47 +275,58 @@ class AutomationWorker {
             // Wait a bit for the button state to stabilize
             await this.sleep(500);
 
-            // Attempt 1: Click the standard "Tạo" / "Generate" text button
-            try {
-                const generateBtn = await page.waitForSelector('xpath///button[contains(., "Tạo") and not(@disabled)] | //button[contains(., "Generate") and not(@disabled)]', { timeout: 3000 });
-                await generateBtn.click();
-                clicked = true;
-                this.log('Clicked text button.');
-            } catch (e) {
-                this.log('Text button not found, trying icons...');
-            }
+            // Attempt 1: Find the floating circle arrow button near the text area
+            clicked = await page.evaluate((selector) => {
+                const textarea = document.querySelector(selector);
+                if (!textarea) return false;
 
-            // Attempt 2: Find the submit arrow icon button based on aria-labels or SVG paths
-            if (!clicked) {
-                clicked = await page.evaluate(() => {
-                    const buttons = Array.from(document.querySelectorAll('button:not([disabled])'));
-                    for (const btn of buttons) {
-                        const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
-                        const svg = btn.querySelector('svg');
+                // The submit button is typically inside a container right next to the textarea
+                const fieldContainer = textarea.closest('div[style*="border-radius"], div[class*="container"]') || textarea.parentElement.parentElement;
+                if (!fieldContainer) return false;
 
-                        // Look for typical submit indicators: play arrow, send, submit
-                        if (ariaLabel.includes('tạo') || ariaLabel.includes('gửi') || ariaLabel.includes('submit') || ariaLabel.includes('send') || ariaLabel.includes('generate')) {
-                            btn.click();
-                            return true;
-                        }
+                const buttons = Array.from(fieldContainer.querySelectorAll('button:not([disabled]), div[role="button"]:not([disabled])'));
 
-                        // If it has an SVG and is near the text area (often the last button in the input group)
-                        if (svg && btn.closest('div').querySelector('textarea')) {
-                            btn.click();
-                            return true;
+                // specifically look for the button with the arrow SVG or use it if it's the last icon button
+                let submitBtn = null;
+                for (const btn of buttons) {
+                    const svgs = btn.querySelectorAll('svg');
+                    for (const svg of svgs) {
+                        const path = svg.innerHTML || '';
+                        // Looking for arrow-forward path specifically 
+                        if (path.includes('arrow_forward') || path.includes('M5 13h11.17l-4.88 4.88c-.39.39-.39 1.03') || path.includes('m12 4-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z') || path.includes('M2.01 21 23 12 2.01 3 2 10l15 2-15 2z')) {
+                            submitBtn = btn;
+                            break;
                         }
                     }
-                    return false;
-                });
-                if (clicked) this.log('Clicked icon button.');
-            }
+                    if (submitBtn) break;
+                }
 
-            // Attempt 3: Fallback to pressing Enter inside the textarea
-            if (!clicked) {
+                // If no exact SVG match, the submit button is almost always the LAST circular icon button in the container
+                if (!submitBtn) {
+                    const iconButtons = buttons.filter(b => b.textContent.replace(/\s/g, '') === '' && b.querySelector('svg'));
+                    if (iconButtons.length > 0) {
+                        submitBtn = iconButtons[iconButtons.length - 1]; // The one on the far right
+                    }
+                }
+
+                if (submitBtn) {
+                    submitBtn.click();
+                    return true;
+                }
+
+                return false;
+            }, promptSelector);
+
+            if (clicked) {
+                this.log('Clicked submit arrow button.');
+            } else {
                 this.log('Pressing Enter as fallback...');
+                // The most reliable fallback is to focus the text area, move to end, and press Enter
                 await page.focus(promptSelector);
-                // Sometimes shift+enter is new line, and enter is submit.
-                // Or ctrl+enter. Standardizing on Enter first.
+                await page.evaluate((sel) => {
+                    const el = document.querySelector(sel);
+                    el.selectionStart = el.selectionEnd = el.value.length;
+                }, promptSelector);
                 await page.keyboard.press('Enter');
             }
 
@@ -271,18 +364,28 @@ class AutomationWorker {
 
         // Try to find Download Button ANYWHERE on the page
         let dlBtn = await page.evaluateHandle(() => {
-            const possibleBtns = Array.from(document.querySelectorAll('button, a[download]'));
+            const possibleBtns = Array.from(document.querySelectorAll('button, a[download], div[role="button"], a[role="button"]'));
             for (const btn of possibleBtns) {
                 const icon = btn.querySelector('i, span[class*="icon"], mat-icon');
                 const text = btn.textContent.trim().toLowerCase();
                 const label = (btn.getAttribute('aria-label') || btn.getAttribute('title') || '').toLowerCase();
                 const svgTitle = btn.querySelector('svg title');
 
+                // check internal svgs for common download paths
+                let hasDownloadSvg = false;
+                const svgs = btn.querySelectorAll('svg');
+                for (const svg of svgs) {
+                    if (svg.innerHTML.includes('M19 9h-4V3H9v6H5l7 7 7-7z') || svg.innerHTML.includes('cloud_download')) {
+                        hasDownloadSvg = true;
+                    }
+                }
+
                 if (
                     (icon && (icon.textContent.trim() === 'download' || icon.textContent.trim() === 'file_download')) ||
                     text === 'tải xuống' || text === 'download' || text.includes('tải xuống') ||
                     label.includes('download') || label.includes('tải xuống') ||
-                    (svgTitle && (svgTitle.textContent.toLowerCase().includes('download') || svgTitle.textContent.toLowerCase().includes('tải xuống')))
+                    (svgTitle && (svgTitle.textContent.toLowerCase().includes('download') || svgTitle.textContent.toLowerCase().includes('tải xuống'))) ||
+                    hasDownloadSvg
                 ) {
                     const r = btn.getBoundingClientRect();
                     if (r.width > 0 && r.height > 0) return btn;
@@ -303,12 +406,30 @@ class AutomationWorker {
                 for (const img of imgs) {
                     const rect = img.getBoundingClientRect();
                     const area = rect.width * rect.height;
-                    if (area > 40000 && !img.src.includes('avatar') && !img.src.includes('logo')) {
+                    const src = img.src || '';
+                    if (area > 40000 && !src.includes('avatar') && !src.includes('logo')) {
                         maxArea = area;
                         bestImg = img;
                     }
                 }
                 if (!bestImg) return null;
+
+                // Try fetching if it's a blob url or standard image to bypass canvas CORS
+                if (bestImg.src.startsWith('blob:') || bestImg.src.startsWith('http')) {
+                    try {
+                        const res = await fetch(bestImg.src);
+                        const blob = await res.blob();
+                        const reader = new FileReader();
+                        return await new Promise(resolve => {
+                            reader.onloadend = () => {
+                                resolve({ data: reader.result.split(',')[1], ext: '.png' });
+                            };
+                            reader.readAsDataURL(blob);
+                        });
+                    } catch (e) {
+                        console.log('Fetch failed, falling back to canvas', e);
+                    }
+                }
 
                 try {
                     const canvas = document.createElement('canvas');
@@ -318,16 +439,19 @@ class AutomationWorker {
                     ctx.drawImage(bestImg, 0, 0);
                     return { data: canvas.toDataURL('image/png').split(',')[1], ext: '.png' };
                 } catch (e) {
-                    return null; // Don't trigger blob download as it bypasses Puppeteer's path config
+                    return { url: bestImg.src };
                 }
             });
 
             if (extracted && extracted.data) {
-                const safeName = targetName.replace(/[^a-z0-9]/gi, '_');
+                const safeName = targetName.replace(/[<>:"/\\|?*]/g, '_');
                 const newPath = path.join(outputDir, `${safeName}${extracted.ext}`);
                 fs.writeFileSync(newPath, extracted.data, 'base64');
                 this.log(`Image extracted directly to: ${newPath}`);
                 return; // done
+            } else if (extracted && extracted.url) {
+                this.log(`Image extraction blocked by CORS. Need to download URL from Node: ${extracted.url}`);
+                // Since this is just a quick workaround, we will just fail and let the screenshot show the issue
             }
             throw new Error("Download button not found and direct image extraction failed.");
         }
@@ -365,20 +489,33 @@ class AutomationWorker {
 
         this.log('Waiting for file system...');
         let newFile = null;
+        let latestTime = 0;
+
         for (let i = 0; i < 60; i++) {
             await this.sleep(1000);
             const now = getFiles();
             const diff = now.filter(f => !before.includes(f));
+
             if (diff.length > 0) {
-                newFile = diff[0];
-                break;
+                // If there are multiple new files, pick the most recently modified one
+                for (const f of diff) {
+                    try {
+                        const stat = fs.statSync(path.join(outputDir, f));
+                        if (stat.mtimeMs > latestTime) {
+                            latestTime = stat.mtimeMs;
+                            newFile = f;
+                        }
+                    } catch (e) { }
+                }
+
+                if (newFile) break;
             }
         }
 
         if (newFile) {
             this.log(`Downloaded: ${newFile}`);
             const ext = path.extname(newFile);
-            const safeName = targetName.replace(/[^a-z0-9]/gi, '_');
+            const safeName = targetName.replace(/[<>:"/\\|?*]/g, '_');
             const oldPath = path.join(outputDir, newFile);
             const newPath = path.join(outputDir, `${safeName}${ext}`);
 
