@@ -89,43 +89,106 @@ class AutomationWorker {
 
         try {
             if (!this.page) await this.launch();
-
             const page = this.page;
-            const prompt = job.PROMPT;
 
-            // 1. New Project Check
-            await this.checkNewProject();
-
-            // 2. Input (Thread-Safe / No Clipboard)
-            const promptSelector = '#PINHOLE_TEXT_AREA_ELEMENT_ID';
+            this.log('Resetting state for new job...');
             try {
-                await page.waitForSelector(promptSelector, { timeout: 5000 });
+                await page.goto('https://labs.google/fx/vi/tools/flow', { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await this.sleep(3000);
             } catch (e) {
-                await this.checkNewProject();
-                await page.waitForSelector(promptSelector);
+                this.log('Navigation took too long, proceeding anyway...');
             }
 
-            // Focus and Clear
+            const prompt = job.PROMPT;
+
+            // 1. Switch Mode (Video vs Image)
+            if (job.TYPE_VIDEO === 'IMG') {
+                this.log('Switching to Image mode...');
+                await page.evaluate(() => {
+                    const btns = Array.from(document.querySelectorAll('button, div[role="button"], a[role="tab"]'));
+                    for (const b of btns) {
+                        const txt = b.textContent.trim().toLowerCase();
+                        if (txt === 'hình ảnh' || txt === 'image') {
+                            b.click();
+                            break;
+                        }
+                    }
+                });
+                await this.sleep(1000);
+            } else {
+                this.log('Switching to Video mode...');
+                await page.evaluate(() => {
+                    const btns = Array.from(document.querySelectorAll('button, div[role="button"], a[role="tab"]'));
+                    for (const b of btns) {
+                        const txt = b.textContent.trim().toLowerCase();
+                        if (txt === 'video') {
+                            b.click();
+                            break;
+                        }
+                    }
+                });
+                await this.sleep(1000);
+            }
+
+            // 2. Input
+            const promptSelector = '#PINHOLE_TEXT_AREA_ELEMENT_ID';
+            try {
+                await page.waitForSelector(promptSelector, { timeout: 10000 });
+            } catch (e) {
+                this.log(`Failed to find text area: ${e.message}`);
+                throw new Error("Text area not found. Is login required?");
+            }
+
             await page.click(promptSelector);
             await page.evaluate((selector) => {
                 document.querySelector(selector).value = '';
             }, promptSelector);
             await this.sleep(400);
 
-            // Thread-Safe Insert
             this.log(`Typing prompt (Length: ${prompt.length})...`);
             await page.evaluate((selector, text) => {
                 const el = document.querySelector(selector);
                 el.focus();
                 document.execCommand('insertText', false, text);
             }, promptSelector, prompt);
-
             await this.sleep(1000);
 
             // 3. Generate
             this.log('Clicking Generate...');
-            const generateBtn = await page.waitForSelector('xpath///button[contains(., "Tạo") and not(@disabled)] | //button[contains(., "Generate") and not(@disabled)]', { timeout: 10000 });
-            await generateBtn.click();
+            let clicked = false;
+            try {
+                const generateBtn = await page.waitForSelector('xpath///button[contains(., "Tạo") and not(@disabled)] | //button[contains(., "Generate") and not(@disabled)]', { timeout: 5000 });
+                await generateBtn.click();
+                clicked = true;
+            } catch (e) {
+                this.log('Tạo text button not found, trying icons or Enter...');
+            }
+
+            if (!clicked) {
+                clicked = await page.evaluate((sel) => {
+                    const input = document.querySelector(sel);
+                    if (input) {
+                        let parent = input.parentElement;
+                        for (let i = 0; i < 5; i++) {
+                            if (!parent) break;
+                            const btns = Array.from(parent.querySelectorAll('button:not([disabled])'));
+                            if (btns.length > 0) {
+                                // Rightmost button in the row usually is Send
+                                btns[btns.length - 1].click();
+                                return true;
+                            }
+                            parent = parent.parentElement;
+                        }
+                    }
+                    return false;
+                }, promptSelector);
+            }
+
+            if (!clicked) {
+                await page.focus(promptSelector);
+                this.log('Pressing Enter...');
+                await page.keyboard.press('Enter');
+            }
 
             // 4. Wait
             this.log('Waiting for generation (~60s)...');
@@ -153,67 +216,88 @@ class AutomationWorker {
     }
 
     async checkNewProject() {
-        try {
-            const startBtn = await this.page.evaluateHandle(() => {
-                const xpath = '//div[contains(text(), "Dự án mới")] | //button[contains(., "Dự án mới")] | //div[contains(text(), "New Project")]';
-                const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-                return result.singleNodeValue;
-            });
-            if (startBtn && startBtn.click) {
-                const inputVisible = await this.page.$('#PINHOLE_TEXT_AREA_ELEMENT_ID');
-                if (!inputVisible) {
-                    await startBtn.click();
-                    await this.sleep(3000);
-                }
-            }
-        } catch (e) { }
+        // Obsolete as we reload the page entirely now, but keep for compatibility if called elsewhere
     }
 
     async handleDownload(targetName, outputDir, type) {
         const page = this.page;
 
-        // Find Card (Last one)
-        let card = null;
-        try {
-            const selector = 'article, div[data-testid="video-card"], div[data-testid="image-card"], div[class*="VisualCard"]';
-            await page.waitForSelector(selector, { timeout: 30000 });
-            const cards = await page.$$(selector);
-            if (cards.length > 0) {
-                card = cards[cards.length - 1];
-            }
-        } catch (e) {
-            throw new Error("No content generated found.");
-        }
-
-        if (!card) throw new Error("Card not found");
-
-        try { await card.hover(); } catch (e) { }
-        await this.sleep(1000);
-
-        // Download Button
-        let dlBtn = await card.evaluateHandle(cardEl => {
-            const buttons = Array.from(cardEl.querySelectorAll('button'));
-            for (const btn of buttons) {
-                // 1. Icon Text
-                const icon = btn.querySelector('i, span[class*="icon"]');
-                if (icon && (icon.textContent.trim() === 'download' || icon.textContent.trim() === 'file_download')) return btn;
-
-                // 2. Button Text
+        // Try to find Download Button ANYWHERE on the page
+        let dlBtn = await page.evaluateHandle(() => {
+            const possibleBtns = Array.from(document.querySelectorAll('button, a[download]'));
+            for (const btn of possibleBtns) {
+                const icon = btn.querySelector('i, span[class*="icon"], mat-icon');
                 const text = btn.textContent.trim().toLowerCase();
-                if (text.includes('tải xuống') || text.includes('download')) return btn;
-
-                // 3. Aria Label / Title
                 const label = (btn.getAttribute('aria-label') || btn.getAttribute('title') || '').toLowerCase();
-                if (label.includes('download') || label.includes('tải xuống')) return btn;
-
-                // 4. SVG Title?
                 const svgTitle = btn.querySelector('svg title');
-                if (svgTitle && (svgTitle.textContent.toLowerCase().includes('download') || svgTitle.textContent.toLowerCase().includes('tải xuống'))) return btn;
+
+                if (
+                    (icon && (icon.textContent.trim() === 'download' || icon.textContent.trim() === 'file_download')) ||
+                    text === 'tải xuống' || text === 'download' || text.includes('tải xuống') ||
+                    label.includes('download') || label.includes('tải xuống') ||
+                    (svgTitle && (svgTitle.textContent.toLowerCase().includes('download') || svgTitle.textContent.toLowerCase().includes('tải xuống')))
+                ) {
+                    const r = btn.getBoundingClientRect();
+                    if (r.width > 0 && r.height > 0) return btn;
+                }
             }
             return null;
         });
 
         const isElement = await page.evaluate(el => el instanceof Element, dlBtn);
+
+        // EXTRACTION FALLBACK FOR IMAGES IF NO BUTTON
+        if (!isElement && type === 'IMG') {
+            this.log('Download button not found. Attempting direct Image extraction...');
+            const extracted = await page.evaluate(async () => {
+                const imgs = Array.from(document.querySelectorAll('img'));
+                let bestImg = null;
+                let maxArea = 0;
+                for (const img of imgs) {
+                    const rect = img.getBoundingClientRect();
+                    const area = rect.width * rect.height;
+                    if (area > 40000 && !img.src.includes('avatar') && !img.src.includes('logo')) {
+                        maxArea = area;
+                        bestImg = img;
+                    }
+                }
+                if (!bestImg) return null;
+
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = bestImg.naturalWidth || bestImg.width || 1024;
+                    canvas.height = bestImg.naturalHeight || bestImg.height || 1024;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(bestImg, 0, 0);
+                    return { data: canvas.toDataURL('image/png').split(',')[1], ext: '.png' };
+                } catch (e) {
+                    try {
+                        const res = await fetch(bestImg.src);
+                        const blob = await res.blob();
+                        return new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                                resolve({ data: reader.result.split(',')[1], ext: '.png' });
+                            };
+                            reader.onerror = () => resolve(null);
+                            reader.readAsDataURL(blob);
+                        });
+                    } catch (err) {
+                        return null;
+                    }
+                }
+            });
+
+            if (extracted && extracted.data) {
+                const safeName = targetName.replace(/[^a-z0-9]/gi, '_');
+                const newPath = path.join(outputDir, `${safeName}${extracted.ext}`);
+                fs.writeFileSync(newPath, extracted.data, 'base64');
+                this.log(`Image extracted directly to: ${newPath}`);
+                return; // done
+            }
+            throw new Error("Download button not found and direct image extraction failed.");
+        }
+
         if (!isElement) throw new Error("Download button not found");
 
         const getFiles = () => fs.readdirSync(outputDir).filter(f => !f.endsWith('.crdownload') && !f.endsWith('.tmp'));
@@ -222,30 +306,22 @@ class AutomationWorker {
         await dlBtn.click();
         await this.sleep(1000);
 
-        // Logic branching
         if (type === 'IMG') {
             this.log('Selecting resolution...');
             try {
-                // Try 1K first, then generic "Download" or "Tải xuống" in menu
-                // Sometimes it's just a direct download, but if a menu appears:
                 const menuSelector = 'div[role="menu"]';
                 try {
                     await page.waitForSelector(menuSelector, { timeout: 3000 });
-                    // Click the item containing "1K" or just the first item if it looks like a download option
                     const item = await page.evaluateHandle(() => {
                         const items = Array.from(document.querySelectorAll('div[role="menu"] li, div[role="menu"] div[role="menuitem"]'));
                         for (const it of items) {
                             if (it.textContent.includes('1K') || it.textContent.includes('Original') || it.textContent.includes('High')) return it;
                         }
-                        return items[0]; // Fallback to first item
+                        return items[0];
                     });
                     if (item) await item.click();
-                } catch (e) {
-                    // No menu? Maybe direct download started.
-                }
-            } catch (e) {
-                this.log("Warning: Resolution selection failed, assuming download started.");
-            }
+                } catch (e) { }
+            } catch (e) { }
         } else {
             try {
                 const quality = await page.waitForSelector('xpath///div[contains(text(), "720p")] | //span[contains(text(), "720p")]', { timeout: 3000 });
