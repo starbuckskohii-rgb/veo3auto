@@ -31,6 +31,15 @@
                 </div>
 
                 <div class="control-group">
+                    <label>Browser Selection</label>
+                    <select id="browserSelect" class="input-row"
+                        style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.2); color: white;">
+                        <option value="edge">Microsoft Edge (Recommended - AntiBot bypass)</option>
+                        <option value="chrome">Chrome / Chromium (Legacy)</option>
+                    </select>
+                </div>
+
+                <div class="control-group" style="margin-top: 8px;">
                     <label>Worker Threads: <span id="workerCountVal"
                             style="color:white; font-weight:bold;">1</span></label>
                     <input type="range" id="workerCount" min="1" max="5" value="1" step="1">

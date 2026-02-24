@@ -4,11 +4,12 @@ const xlsx = require('xlsx');
 const AutomationWorker = require('./worker');
 
 class AutomationService {
-    constructor(io, inputFolder, workerCount = 1) {
+    constructor(io, inputFolder, workerCount = 1, browserType = 'edge') {
         this.io = io;
         this.inputFolder = inputFolder;
         this.outputDir = path.join(inputFolder, 'Output');
         this.workerCount = workerCount;
+        this.browserType = browserType;
         this.workers = [];
         this.isRunning = false;
 
@@ -31,7 +32,7 @@ class AutomationService {
         // Initialize Workers
         this.workers = [];
         for (let i = 1; i <= this.workerCount; i++) {
-            this.workers.push(new AutomationWorker(i, this.io));
+            this.workers.push(new AutomationWorker(i, this.io, this.browserType));
         }
 
         // Scan & Build Queue
@@ -203,8 +204,8 @@ class AutomationService {
 
     // Manual Profile Opener
     async openProfile(id) {
-        this.log(`Opening Profile ${id} for manual login...`);
-        const worker = new AutomationWorker(id, this.io);
+        this.log(`Opening Profile ${id} for manual login using ${this.browserType}...`);
+        const worker = new AutomationWorker(id, this.io, this.browserType);
         await worker.launch();
         return worker;
     }

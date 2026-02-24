@@ -3,9 +3,10 @@ const path = require('path');
 const fs = require('fs');
 
 class AutomationWorker {
-    constructor(id, io) {
+    constructor(id, io, browserType = 'edge') {
         this.id = id;
         this.io = io;
+        this.browserType = browserType;
         this.browser = null;
         this.page = null;
         this.isBusy = false;
@@ -25,57 +26,91 @@ class AutomationWorker {
     }
 
     async launch() {
-        this.log('Launching browser...');
+        this.log(`Launching browser (${this.browserType})...`);
+
+        if (this.browserType === 'chrome') {
+            try {
+                this.log('Trying puppeteer-real-browser for Chrome...');
+                const { connect } = require('puppeteer-real-browser');
+                const options = {
+                    headless: false,
+                    turnstile: true,
+                    args: [
+                        '--start-maximized',
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-features=IsolateOrigins,site-per-process',
+                        '--disable-dev-shm-usage',
+                        '--no-first-run',
+                        '--no-default-browser-check'
+                    ],
+                    customConfig: {
+                        userDataDir: this.profilePath
+                    },
+                    connectOption: { defaultViewport: null }
+                };
+                const result = await connect(options);
+                this.browser = result.browser;
+                this.page = result.page;
+
+                await this.handleLoginWait();
+                return;
+            } catch (e) {
+                this.log(`puppeteer-real-browser failed: ${e.message}. Falling back to standard Puppeteer.`);
+            }
+        }
+
         try {
-            const { connect } = require('puppeteer-real-browser');
-            const options = {
-                headless: false,
-                turnstile: true,
-                args: [
-                    '--start-maximized',
-                    '--disable-blink-features=AutomationControlled',
-                    '--disable-features=IsolateOrigins,site-per-process',
-                    '--disable-dev-shm-usage',
-                    '--no-first-run',
-                    '--no-default-browser-check'
-                ],
-                customConfig: {
-                    userDataDir: this.profilePath
-                },
-                connectOption: { defaultViewport: null }
-            };
-            const result = await connect(options);
-            this.browser = result.browser;
-            this.page = result.page;
-        } catch (e) {
-            this.log(`Real-browser failed, switching to standard Puppeteer.`);
+            // Try finding Microsoft Edge on Windows
+            const edgePaths = [
+                'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+                'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+            ];
+            let executablePath = null;
+            for (const ep of edgePaths) {
+                if (fs.existsSync(ep)) {
+                    executablePath = ep;
+                    break;
+                }
+            }
 
-            // Auto-Download Chrome if missing
-            const cacheDir = process.env.PUPPETEER_CACHE_DIR || path.join(process.env.USER_DATA_PATH || '.', 'puppeteer_cache');
-            if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+            if (!executablePath) {
+                this.log('Edge not found. Downloading Chrome (First Run)... This may take a minute.');
+                const cacheDir = process.env.PUPPETEER_CACHE_DIR || path.join(process.env.USER_DATA_PATH || '.', 'puppeteer_cache');
+                if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+                const browserFetcher = puppeteer.createBrowserFetcher({ path: cacheDir });
+                const revisionInfo = browserFetcher.revisionInfo(puppeteer.PUPPETEER_REVISIONS.chromium);
 
-            // Create fetcher
-            const browserFetcher = puppeteer.createBrowserFetcher({ path: cacheDir });
-            const revisionInfo = browserFetcher.revisionInfo(puppeteer.PUPPETEER_REVISIONS.chromium);
-
-            if (!revisionInfo.local) {
-                this.log('Downloading Chrome (First Run)... This may take a minute.');
-                await browserFetcher.download(puppeteer.PUPPETEER_REVISIONS.chromium, (downloaded, total) => {
-                    // Optional: progress logging
-                });
-                this.log('Download complete.');
+                if (!revisionInfo.local) {
+                    await browserFetcher.download(puppeteer.PUPPETEER_REVISIONS.chromium, (downloaded, total) => { });
+                    this.log('Download complete.');
+                }
+                executablePath = revisionInfo.executablePath;
+            } else {
+                this.log(`Using Local Microsoft Edge: ${executablePath}`);
             }
 
             this.browser = await puppeteer.launch({
                 headless: false,
                 defaultViewport: null,
                 userDataDir: this.profilePath,
-                executablePath: revisionInfo.executablePath,
-                args: ['--start-maximized']
+                executablePath: executablePath,
+                ignoreDefaultArgs: ['--enable-automation'],
+                args: [
+                    '--start-maximized',
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-infobars'
+                ]
             });
             this.page = await this.browser.newPage();
+        } catch (e) {
+            this.log(`Browser launch failed: ${e.message}`);
         }
 
+        await this.handleLoginWait();
+    }
+
+    async handleLoginWait() {
+        if (!this.page) return;
         try {
             await this.page.goto('https://labs.google/fx/vi/tools/flow', { waitUntil: 'networkidle2' });
 
@@ -330,9 +365,35 @@ class AutomationWorker {
                 await page.keyboard.press('Enter');
             }
 
-            // 4. Wait
+            // 4. Wait & Handle Errors during Generation
             this.log('Waiting for generation (~60s)...');
-            await this.sleep(60000);
+            let generationStartedTime = Date.now();
+            let hasError = false;
+
+            for (let i = 0; i < 60; i++) {
+                await this.sleep(1000);
+
+                // Check if the "Đã xảy ra lỗi" (Error occurred) dialog/text appeared
+                const errorFound = await page.evaluate(() => {
+                    const texts = Array.from(document.querySelectorAll('div, span, h1, h2, h3, h4, p'));
+                    return texts.some(el => el.textContent.trim() === 'Đã xảy ra lỗi.' || el.textContent.trim() === 'Something went wrong.' || el.textContent.includes('Đã xảy ra lỗi'));
+                });
+
+                if (errorFound) {
+                    this.log('Detected Google error message ("Đã xảy ra lỗi"). Refreshing page and retrying...');
+                    hasError = true;
+                    break;
+                }
+
+                // If it successfully downloads or finishes, we'll just wait out the loop or break early if we implement progress tracking
+                // For now, simple fixed wait is fine if no error is seen. We wait the full 60 seconds.
+            }
+
+            if (hasError) {
+                await page.reload({ waitUntil: 'networkidle2' });
+                await this.sleep(5000);
+                throw new Error("Generation blocked by Google (Error screen). Auto-reloaded for next attempt.");
+            }
 
             // 5. Download
             this.log(`Downloading (${job.TYPE_VIDEO === 'IMG' ? 'Image' : 'Video'})...`);

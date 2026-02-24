@@ -81,18 +81,19 @@ workerCount.addEventListener('input', () => {
     }
 });
 
-// Open Profile
 window.openProfile = async (id) => {
+    const browserType = document.getElementById('browserSelect').value;
     await fetch('/api/open-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id })
+        body: JSON.stringify({ id, browserType })
     });
 };
 
 btnStart.addEventListener('click', async () => {
     const inputDir = inputPath.value;
     const count = workerCount.value;
+    const browserType = document.getElementById('browserSelect').value;
 
     if (!inputDir) {
         alert('Please select input folder.');
@@ -102,7 +103,7 @@ btnStart.addEventListener('click', async () => {
     const res = await fetch('/api/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputDir, workerCount: count })
+        body: JSON.stringify({ inputDir, workerCount: count, browserType })
     });
 
     if (res.ok) {

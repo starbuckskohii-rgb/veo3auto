@@ -107,7 +107,7 @@ app.post('/api/clear-retries', (req, res) => {
 let automationInstance = null;
 
 app.post('/api/start', async (req, res) => {
-    const { inputDir, workerCount = 1 } = req.body;
+    const { inputDir, workerCount = 1, browserType = 'edge' } = req.body;
     if (!inputDir) return res.status(400).json({ error: "Missing input path" });
 
     if (automationInstance && automationInstance.isRunning) {
@@ -115,7 +115,7 @@ app.post('/api/start', async (req, res) => {
     }
 
     // Initialize Master Automation
-    automationInstance = new AutomationService(io, inputDir, parseInt(workerCount));
+    automationInstance = new AutomationService(io, inputDir, parseInt(workerCount), browserType);
     try {
         automationInstance.start();
     } catch (e) {
@@ -127,9 +127,9 @@ app.post('/api/start', async (req, res) => {
 });
 
 app.post('/api/open-profile', async (req, res) => {
-    const { id } = req.body;
+    const { id, browserType = 'edge' } = req.body;
     // Temp instance just to open profile
-    const srv = new AutomationService(io, './', 1);
+    const srv = new AutomationService(io, './', 1, browserType);
     // We don't track this instance for automation, just fire and forget (or keep ref to close?)
     // For manual login, user will close it manually usually.
     // Or we keep it in a separate list? 
