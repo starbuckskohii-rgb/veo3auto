@@ -26,13 +26,32 @@
                     <div class="input-row">
                         <input type="text" id="inputPath"
                             placeholder="Select or paste folder path containing .xlsx files">
-                        <button id="btnPickInput" class="icon-btn">📂</button>
+                        <button id="btnPickInput" class="icon-btn" title="Pick Folder">📂</button>
                     </div>
                 </div>
 
+                <div class="control-group">
+                    <label>Worker Threads: <span id="workerCountVal"
+                            style="color:white; font-weight:bold;">1</span></label>
+                    <input type="range" id="workerCount" min="1" max="5" value="1" step="1">
+                    <small style="color: #aaa; font-size: 0.8em; margin-top: 4px; display: block;">Recommended: 1-2 for
+                        stability</small>
+                </div>
 
+                <div class="control-group">
+                    <label>Manual Login (Profiles)</label>
+                    <div class="profile-buttons">
+                        <button onclick="openProfile(1)" class="small-btn">Profile 1</button>
+                        <button onclick="openProfile(2)" class="small-btn">Profile 2</button>
+                        <button onclick="openProfile(3)" class="small-btn">Profile 3</button>
+                    </div>
+                </div>
 
-                <div class="actions">
+                <div class="control-group" style="margin-top: 8px;">
+                    <button id="btnClearRetries" class="secondary-btn">🧹 Clear Excel Retries</button>
+                </div>
+
+                <div class="actions" style="margin-top: auto; padding-top: 16px;">
                     <button id="btnStart" class="primary-btn">▶ Start Automation</button>
                     <button id="btnStop" class="danger-btn hidden">⏹ Stop</button>
                 </div>

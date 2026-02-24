@@ -17,12 +17,16 @@ app.use(cors());
 
 // --- Utilities ---
 
-// Use PowerShell for native dialogs
-function pickFile(filter = "Excel Files (*.xlsx)|*.xlsx") {
+const { dialog, BrowserWindow } = require('electron');
+
+function pickFile(filterName = "Excel Files", filterExt = ["xlsx"]) {
     try {
-        const cmd = `powershell -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = '${filter}'; $f.ShowDialog() | Out-Null; $f.FileName"`;
-        const output = execSync(cmd).toString().trim();
-        return output && fs.existsSync(output) ? output : null;
+        const win = BrowserWindow.getFocusedWindow();
+        const result = dialog.showOpenDialogSync(win, {
+            properties: ['openFile'],
+            filters: [{ name: filterName, extensions: filterExt }]
+        });
+        return result && result.length > 0 ? result[0] : null;
     } catch (e) {
         console.error("File pick error:", e);
         return null;
@@ -31,9 +35,11 @@ function pickFile(filter = "Excel Files (*.xlsx)|*.xlsx") {
 
 function pickFolder() {
     try {
-        const cmd = `powershell -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.ShowDialog() | Out-Null; $f.SelectedPath"`;
-        const output = execSync(cmd).toString().trim();
-        return output && fs.existsSync(output) ? output : null;
+        const win = BrowserWindow.getFocusedWindow();
+        const result = dialog.showOpenDialogSync(win, {
+            properties: ['openDirectory']
+        });
+        return result && result.length > 0 ? result[0] : null;
     } catch (e) {
         console.error("Folder pick error:", e);
         return null;
@@ -52,6 +58,48 @@ app.get('/api/pick-folder', (req, res) => {
     res.json({ path });
 });
 
+app.post('/api/clear-retries', (req, res) => {
+    const { inputDir } = req.body;
+    if (!inputDir) return res.status(400).json({ error: "Missing input path" });
+    if (automationInstance && automationInstance.isRunning) {
+        return res.status(400).json({ error: "Cannot clear while automation is running." });
+    }
+
+    try {
+        const xlsx = require('xlsx');
+        const files = fs.readdirSync(inputDir).filter(f => f.endsWith('.xlsx') && !f.startsWith('~$'));
+        let modifiedCount = 0;
+
+        for (const file of files) {
+            const filePath = path.join(inputDir, file);
+            const workbook = xlsx.readFile(filePath);
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const data = xlsx.utils.sheet_to_json(worksheet, { defval: "" });
+
+            let updated = false;
+            for (let i = 0; i < data.length; i++) {
+                if (data[i]['RETRY_COUNT']) {
+                    data[i]['RETRY_COUNT'] = ''; // Clear it
+                    updated = true;
+                }
+            }
+
+            if (updated) {
+                const newWs = xlsx.utils.json_to_sheet(data);
+                const newWb = xlsx.utils.book_new();
+                xlsx.utils.book_append_sheet(newWb, newWs, sheetName);
+                xlsx.writeFile(newWb, filePath);
+                modifiedCount++;
+            }
+        }
+        res.json({ status: "success", modifiedFiles: modifiedCount });
+    } catch (e) {
+        console.error("Clear retries error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 let automationInstance = null;
 
 app.post('/api/start', async (req, res) => {
@@ -64,7 +112,12 @@ app.post('/api/start', async (req, res) => {
 
     // Initialize Master Automation
     automationInstance = new AutomationService(io, inputDir, parseInt(workerCount));
-    automationInstance.start();
+    try {
+        automationInstance.start();
+    } catch (e) {
+        console.error("Failed to start automation:", e);
+        io.emit('log', `Error starting: ${e.message}`);
+    }
 
     res.json({ status: "started" });
 });

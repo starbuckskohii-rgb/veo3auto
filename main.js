@@ -29,8 +29,21 @@ function createWindow() {
 function startServer() {
     try {
         console.log('Starting internal server...');
+
+        // Config paths for production (writeable paths)
+        const userDataPath = app.getPath('userData');
+        process.env.USER_DATA_PATH = userDataPath;
+        process.env.PUPPETEER_CACHE_DIR = path.join(userDataPath, 'puppeteer_cache');
+
+        // Create dirs if not exist
+        const fs = require('fs');
+        if (!fs.existsSync(process.env.PUPPETEER_CACHE_DIR)) {
+            fs.mkdirSync(process.env.PUPPETEER_CACHE_DIR, { recursive: true });
+        }
+
+        console.log('User Data Path:', process.env.USER_DATA_PATH);
+
         // Require server.js to run it in the Main Process
-        // This avoids needing 'node.exe' installed on the user system.
         require('./server.js');
     } catch (e) {
         console.error('Failed to start server:', e);

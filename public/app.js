@@ -108,6 +108,7 @@ btnStart.addEventListener('click', async () => {
     if (res.ok) {
         btnStart.classList.add('hidden');
         btnStop.classList.remove('hidden');
+        document.getElementById('btnClearRetries').disabled = true;
     } else {
         const err = await res.json();
         alert('Error: ' + err.error);
@@ -118,8 +119,43 @@ btnStop.addEventListener('click', async () => {
     await fetch('/api/stop', { method: 'POST' });
     btnStop.classList.add('hidden');
     btnStart.classList.remove('hidden');
+    document.getElementById('btnClearRetries').disabled = false;
     document.getElementById('activeJob').textContent = 'Stopped';
 });
+
+const btnClearRetries = document.getElementById('btnClearRetries');
+if (btnClearRetries) {
+    btnClearRetries.addEventListener('click', async () => {
+        const inputDir = inputPath.value;
+        if (!inputDir) {
+            alert('Please select input folder first.');
+            return;
+        }
+
+        btnClearRetries.disabled = true;
+        btnClearRetries.textContent = 'Clearing...';
+
+        try {
+            const res = await fetch('/api/clear-retries', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ inputDir })
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                alert(`Successfully cleared retries for ${data.modifiedFiles} file(s).`);
+            } else {
+                alert('Error: ' + data.error);
+            }
+        } catch (e) {
+            alert('Failed to connect to server.');
+        } finally {
+            btnClearRetries.disabled = false;
+            btnClearRetries.textContent = '🧹 Clear Excel Retries';
+        }
+    });
+}
 
 document.getElementById('btnClearLogs').addEventListener('click', () => {
     logsContent.innerHTML = '';

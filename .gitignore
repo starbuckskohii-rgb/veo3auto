@@ -12,3 +12,6 @@ debug_*.png
 page_dump.html
 page_snapshot.png
 *.crdownload
+dist/
+release/
+*.exe

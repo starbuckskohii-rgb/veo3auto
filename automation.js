@@ -56,7 +56,12 @@ class AutomationService {
     }
 
     scanFiles() {
-        this.files = fs.readdirSync(this.inputFolder).filter(f => f.endsWith('.xlsx') && !f.startsWith('~$'));
+        try {
+            this.files = fs.readdirSync(this.inputFolder).filter(f => f.endsWith('.xlsx') && !f.startsWith('~$'));
+        } catch (e) {
+            this.log(`Error scanning folder: ${e.message}`);
+            this.files = [];
+        }
         this.globalQueue = [];
 
         this.files.forEach((file, fIndex) => {

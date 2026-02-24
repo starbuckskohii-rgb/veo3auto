@@ -42,9 +42,8 @@ body {
     box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
 }
 
-/* Sidebar */
 .sidebar {
-    width: 300px;
+    width: 320px;
     margin: 16px;
     padding: 24px;
     display: flex;
@@ -56,6 +55,7 @@ body {
     font-weight: 600;
     background: linear-gradient(to right, #60a5fa, #34d399);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
@@ -75,10 +75,11 @@ input[type="text"] {
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid var(--glass-border);
     color: var(--text-primary);
-    padding: 10px 12px;
+    padding: 12px 14px;
     border-radius: 8px;
     width: 100%;
     font-size: 0.9rem;
+    height: 42px;
     transition: border-color 0.2s, background 0.2s;
 }
 
@@ -90,7 +91,7 @@ input[type="text"]:focus {
 
 .input-row {
     display: flex;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
 }
 
@@ -101,6 +102,7 @@ input[type="text"]:focus {
     cursor: pointer;
     border-radius: 8px;
     padding: 10px 14px;
+    height: 42px;
     transition: all 0.2s;
     display: flex;
     align-items: center;
@@ -121,15 +123,38 @@ input[type="text"]:focus {
     color: white;
     border: none;
     width: 100%;
-    padding: 12px;
+    padding: 14px;
     border-radius: 8px;
     font-weight: 600;
+    font-size: 0.95rem;
     cursor: pointer;
-    transition: opacity 0.2s;
+    transition: opacity 0.2s, transform 0.1s;
+    box-shadow: 0 4px 14px 0 rgba(59, 130, 246, 0.39);
 }
 
 .primary-btn:hover {
     opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+.primary-btn:active {
+    transform: translateY(0);
+}
+
+.secondary-btn {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    border: 1px solid var(--glass-border);
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.secondary-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .danger-btn {
@@ -137,10 +162,17 @@ input[type="text"]:focus {
     color: white;
     border: none;
     width: 100%;
-    padding: 12px;
+    padding: 14px;
     border-radius: 8px;
     font-weight: 600;
+    font-size: 0.95rem;
     cursor: pointer;
+    transition: opacity 0.2s;
+    box-shadow: 0 4px 14px 0 rgba(239, 68, 68, 0.39);
+}
+
+.danger-btn:hover {
+    opacity: 0.9;
 }
 
 .hidden {
@@ -269,4 +301,26 @@ td {
 .log-entry {
     margin-bottom: 4px;
     word-break: break-word;
+}
+
+/* Profile Buttons */
+.profile-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 5px;
+}
+
+.small-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.8em;
+    transition: all 0.3s ease;
+}
+
+.small-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
 }

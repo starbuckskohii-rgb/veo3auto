@@ -1,4 +1,4 @@
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('puppeteer');
 const path = require('path');
 const fs = require('fs');
 
@@ -9,7 +9,13 @@ class AutomationWorker {
         this.browser = null;
         this.page = null;
         this.isBusy = false;
-        this.profilePath = path.resolve(`./user_data/profile_${id}`);
+
+        const baseDir = process.env.USER_DATA_PATH || path.resolve('./user_data');
+        this.profilePath = path.join(baseDir, `profile_${id}`);
+
+        if (!fs.existsSync(this.profilePath)) {
+            fs.mkdirSync(this.profilePath, { recursive: true });
+        }
     }
 
     log(msg) {
@@ -41,11 +47,29 @@ class AutomationWorker {
             this.browser = result.browser;
             this.page = result.page;
         } catch (e) {
-            this.log('Real-browser failed, using standard puppeteer.');
+            this.log(`Real-browser failed, switching to standard Puppeteer.`);
+
+            // Auto-Download Chrome if missing
+            const cacheDir = process.env.PUPPETEER_CACHE_DIR || path.join(process.env.USER_DATA_PATH || '.', 'puppeteer_cache');
+            if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+
+            // Create fetcher
+            const browserFetcher = puppeteer.createBrowserFetcher({ path: cacheDir });
+            const revisionInfo = browserFetcher.revisionInfo(puppeteer.PUPPETEER_REVISIONS.chromium);
+
+            if (!revisionInfo.local) {
+                this.log('Downloading Chrome (First Run)... This may take a minute.');
+                await browserFetcher.download(puppeteer.PUPPETEER_REVISIONS.chromium, (downloaded, total) => {
+                    // Optional: progress logging
+                });
+                this.log('Download complete.');
+            }
+
             this.browser = await puppeteer.launch({
                 headless: false,
                 defaultViewport: null,
                 userDataDir: this.profilePath,
+                executablePath: revisionInfo.executablePath,
                 args: ['--start-maximized']
             });
             this.page = await this.browser.newPage();
@@ -61,10 +85,11 @@ class AutomationWorker {
     }
 
     async processJob(job, outputDir) {
-        if (!this.page) await this.launch();
         this.isBusy = true;
 
         try {
+            if (!this.page) await this.launch();
+
             const page = this.page;
             const prompt = job.PROMPT;
 
@@ -112,6 +137,15 @@ class AutomationWorker {
 
         } catch (e) {
             this.log(`Job Failed: ${e.message}`);
+            try {
+                if (this.page) {
+                    const errorPath = path.join(outputDir, `error_${job.JOB_ID}.png`);
+                    await this.page.screenshot({ path: errorPath, fullPage: true });
+                    this.log(`Screenshot saved to: ${errorPath}`);
+                }
+            } catch (err) {
+                console.error("Failed to save error screenshot:", err);
+            }
             throw e;
         } finally {
             this.isBusy = false;
@@ -141,8 +175,9 @@ class AutomationWorker {
         // Find Card (Last one)
         let card = null;
         try {
-            await page.waitForSelector('article, div[data-testid="video-card"]', { timeout: 15000 });
-            const cards = await page.$$('article, div[data-testid="video-card"]');
+            const selector = 'article, div[data-testid="video-card"], div[data-testid="image-card"], div[class*="VisualCard"]';
+            await page.waitForSelector(selector, { timeout: 30000 });
+            const cards = await page.$$(selector);
             if (cards.length > 0) {
                 card = cards[cards.length - 1];
             }
@@ -159,11 +194,21 @@ class AutomationWorker {
         let dlBtn = await card.evaluateHandle(cardEl => {
             const buttons = Array.from(cardEl.querySelectorAll('button'));
             for (const btn of buttons) {
-                const icon = btn.querySelector('i');
-                if (icon && icon.textContent.trim() === 'download') return btn;
+                // 1. Icon Text
+                const icon = btn.querySelector('i, span[class*="icon"]');
+                if (icon && (icon.textContent.trim() === 'download' || icon.textContent.trim() === 'file_download')) return btn;
+
+                // 2. Button Text
                 const text = btn.textContent.trim().toLowerCase();
                 if (text.includes('tải xuống') || text.includes('download')) return btn;
-                if (btn.getAttribute('aria-label')?.includes('Download') || btn.getAttribute('aria-label')?.includes('Tải xuống')) return btn;
+
+                // 3. Aria Label / Title
+                const label = (btn.getAttribute('aria-label') || btn.getAttribute('title') || '').toLowerCase();
+                if (label.includes('download') || label.includes('tải xuống')) return btn;
+
+                // 4. SVG Title?
+                const svgTitle = btn.querySelector('svg title');
+                if (svgTitle && (svgTitle.textContent.toLowerCase().includes('download') || svgTitle.textContent.toLowerCase().includes('tải xuống'))) return btn;
             }
             return null;
         });
@@ -179,12 +224,27 @@ class AutomationWorker {
 
         // Logic branching
         if (type === 'IMG') {
-            this.log('Selecting 1K resolution...');
-            const option1K = await page.waitForSelector('xpath///div[contains(text(), "1K")] | //span[contains(text(), "1K")] | //li[contains(text(), "1K")]', { timeout: 5000 });
-            if (option1K) {
-                await option1K.click();
-            } else {
-                this.log("Warning: 1K option not found, checking if download started automatically...");
+            this.log('Selecting resolution...');
+            try {
+                // Try 1K first, then generic "Download" or "Tải xuống" in menu
+                // Sometimes it's just a direct download, but if a menu appears:
+                const menuSelector = 'div[role="menu"]';
+                try {
+                    await page.waitForSelector(menuSelector, { timeout: 3000 });
+                    // Click the item containing "1K" or just the first item if it looks like a download option
+                    const item = await page.evaluateHandle(() => {
+                        const items = Array.from(document.querySelectorAll('div[role="menu"] li, div[role="menu"] div[role="menuitem"]'));
+                        for (const it of items) {
+                            if (it.textContent.includes('1K') || it.textContent.includes('Original') || it.textContent.includes('High')) return it;
+                        }
+                        return items[0]; // Fallback to first item
+                    });
+                    if (item) await item.click();
+                } catch (e) {
+                    // No menu? Maybe direct download started.
+                }
+            } catch (e) {
+                this.log("Warning: Resolution selection failed, assuming download started.");
             }
         } else {
             try {
