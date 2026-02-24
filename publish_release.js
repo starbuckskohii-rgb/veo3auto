@@ -4,10 +4,10 @@ const path = require('path');
 const GITHUB_TOKEN = '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';
 const REPO_OWNER = 'starbuckskohii-rgb';
 const REPO_NAME = 'veo3auto';
-const TAG_NAME = 'v1.0.5';
-const RELEASE_NAME = 'Veo3 Auto v1.0.5 (Debug Screenshot)';
-const ASSET_PATH = path.resolve('dist/Veo3 Auto Setup 1.0.5.exe');
-const ASSET_NAME = 'Veo3 Auto Setup 1.0.5.exe';
+const TAG_NAME = 'v1.0.6';
+const RELEASE_NAME = 'Veo3 Auto v1.0.6 (UI Refine & Fixes)';
+const ASSET_PATH = path.resolve('dist/Veo3 Auto Setup 1.0.6.exe');
+const ASSET_NAME = 'Veo3 Auto Setup 1.0.6.exe';
 
 async function createRelease() {
     console.log(`Creating release ${TAG_NAME}...`);
