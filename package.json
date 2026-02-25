@@ -1,6 +1,6 @@
 {
   "name": "veo3auto",
-  "version": "1.0.13",
+  "version": "1.0.24",
   "description": "Veo3 Automation Desktop App",
   "main": "main.js",
   "author": "Veo3 Team",
@@ -48,6 +48,8 @@
     "express": "^5.2.1",
     "open": "^11.0.0",
     "puppeteer": "^24.37.2",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "puppeteer-real-browser": "^1.4.4",
     "socket.io": "^4.8.3",
     "xlsx": "^0.18.5"

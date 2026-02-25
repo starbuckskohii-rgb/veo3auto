@@ -32,13 +32,13 @@ const path = require('path');
             const html = await page.content();
             fs.writeFileSync('page_dump.html', html);
             console.log('Successfully saved to page_dump.html');
-            
-            await page.screenshot({ path: 'page_snapshot.png' });
-            console.log('Successfully saved to page_snapshot.png');
+
+            // await page.screenshot({ path: 'page_snapshot.png' });
+            // console.log('Successfully saved to page_snapshot.png');
         } catch (err) {
             console.error('Error capturing page:', err);
         }
-        
+
         console.log('Closing browser...');
         await browser.close();
         process.exit(0);

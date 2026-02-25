@@ -2,6 +2,30 @@ const puppeteer = require('puppeteer');
 const path = require('path');
 const fs = require('fs');
 
+// Global Mutex for synchronizing UI coordinate clicks across all workers
+const uiMutex = {
+    isLocked: false,
+    queue: [],
+    lock: async function () {
+        return new Promise(resolve => {
+            if (!this.isLocked) {
+                this.isLocked = true;
+                resolve();
+            } else {
+                this.queue.push(resolve);
+            }
+        });
+    },
+    unlock: function () {
+        if (this.queue.length > 0) {
+            const nextResolve = this.queue.shift();
+            nextResolve();
+        } else {
+            this.isLocked = false;
+        }
+    }
+};
+
 class AutomationWorker {
     constructor(id, io, browserType = 'edge') {
         this.id = id;
@@ -10,6 +34,7 @@ class AutomationWorker {
         this.browser = null;
         this.page = null;
         this.isBusy = false;
+        this.isOffline = false;
 
         const baseDir = process.env.USER_DATA_PATH || path.resolve('./user_data');
         this.profilePath = path.join(baseDir, `profile_${id}`);
@@ -35,13 +60,14 @@ class AutomationWorker {
                 const options = {
                     headless: false,
                     turnstile: true,
+                    ignoreAllFlags: true,
                     args: [
                         '--start-maximized',
-                        '--disable-blink-features=AutomationControlled',
-                        '--disable-features=IsolateOrigins,site-per-process',
+                        '--disable-features=IsolateOrigins,site-per-process,AutomationControlled',
                         '--disable-dev-shm-usage',
                         '--no-first-run',
-                        '--no-default-browser-check'
+                        '--no-default-browser-check',
+                        '--disable-infobars'
                     ],
                     customConfig: {
                         userDataDir: this.profilePath
@@ -52,6 +78,12 @@ class AutomationWorker {
                 this.browser = result.browser;
                 this.page = result.page;
 
+                this.browser.on('disconnected', () => {
+                    this.isOffline = true;
+                    this.io.emit('worker-status', { id: this.id, status: 'offline' });
+                    this.log('Browser disconnected. Worker offline.');
+                });
+
                 await this.handleLoginWait();
                 return;
             } catch (e) {
@@ -60,6 +92,11 @@ class AutomationWorker {
         }
 
         try {
+            // Apply Stealth Plugin for standard launch
+            const puppeteerExtra = require('puppeteer-extra');
+            const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+            puppeteerExtra.use(StealthPlugin());
+
             // Try finding Microsoft Edge on Windows
             const edgePaths = [
                 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -89,7 +126,7 @@ class AutomationWorker {
                 this.log(`Using Local Microsoft Edge: ${executablePath}`);
             }
 
-            this.browser = await puppeteer.launch({
+            this.browser = await puppeteerExtra.launch({
                 headless: false,
                 defaultViewport: null,
                 userDataDir: this.profilePath,
@@ -97,10 +134,16 @@ class AutomationWorker {
                 ignoreDefaultArgs: ['--enable-automation'],
                 args: [
                     '--start-maximized',
-                    '--disable-blink-features=AutomationControlled',
                     '--disable-infobars'
                 ]
             });
+
+            this.browser.on('disconnected', () => {
+                this.isOffline = true;
+                this.io.emit('worker-status', { id: this.id, status: 'offline' });
+                this.log('Browser disconnected. Worker offline.');
+            });
+
             this.page = await this.browser.newPage();
         } catch (e) {
             this.log(`Browser launch failed: ${e.message}`);
@@ -128,6 +171,10 @@ class AutomationWorker {
                 }
             }
         } catch (e) { }
+    }
+
+    getRand(base) {
+        return base + Math.floor(Math.random() * 11) - 5;
     }
 
     async close() {
@@ -158,6 +205,7 @@ class AutomationWorker {
                 const url = await page.url();
                 if (!url.includes('https://labs.google/fx/vi/tools/flow')) {
                     await page.goto('https://labs.google/fx/vi/tools/flow', { waitUntil: 'domcontentloaded', timeout: 30000 });
+                    this.settingsApplied = false;
                 }
                 await this.sleep(3000);
 
@@ -181,196 +229,286 @@ class AutomationWorker {
 
             const prompt = job.PROMPT;
 
-            // 1. Switch Mode (Video vs Image)
-            await page.evaluate(async (isImg) => {
-                const targetTexts = isImg ? ['tạo hình ảnh', 'create image'] : ['từ văn bản sang video', 'text to video'];
-                const otherTexts = isImg ? ['từ văn bản sang video', 'text to video'] : ['tạo hình ảnh', 'create image'];
+            // 1. Switch Mode
 
-                const findElByTextRegex = (texts) => {
-                    const all = Array.from(document.querySelectorAll('button, div[role="button"], div[role="combobox"], [role="option"], [role="menuitem"], a[role="tab"], div[class*="chip"]'));
-                    for (const el of all) {
-                        const txt = el.textContent.trim().toLowerCase();
-                        if (txt === 'hình ảnh' || txt === 'image') continue; // Skip top nav
-                        if (texts.some(t => txt.includes(t))) return el;
+            // Coordinate Map from User UI Recorder
+            // LƯU Ý: NẾU MUỐN SỬ DỤNG TỌA ĐỘ CỐ ĐỊNH CHO CÁC NÚT TRONG BẢNG CÀI ĐẶT, 
+            // BẠN PHẢI GHI LẠI TỌA ĐỘ LÚC BẢNG CÀI ĐẶT ĐÃ MỞ VÀ HIỂN THỊ Ở GIỮA MÀN HÌNH!
+            const coords = {
+                modes: {
+                    'T2V': { x: 709, y: 605 },
+                    'I2V': { x: 724, y: 650 },
+                    'IN2V': { x: 719, y: 692 },
+                    'IMG': { x: 703, y: 736 },
+                    trigger_t2v: { x: 723, y: 792 }
+                },
+                settingsBtn: { x: 1230, y: 792 },
+                ratio: {
+                    trigger: { x: 901, y: 604 },
+                    '9:16': { x: 895, y: 539 },
+                    '16:9': { x: 899, y: 495 },
+                    '1:1': { x: 935, y: 839 },
+                    '4:3': { x: 935, y: 839 }
+                },
+                count: {
+                    trigger: { x: 1128, y: 607 },
+                    '1': { x: 1124, y: 408 },
+                    '2': { x: 1123, y: 451 },
+                    '3': { x: 1125, y: 494 },
+                    '4': { x: 1128, y: 538 }
+                },
+                model: {
+                    trigger: { x: 998, y: 684 },
+                    'Veo 3.1 - Fast [Lower Priority]': { x: 998, y: 439 },
+                    'Veo 3.1 - Fast': { x: 932, y: 381 },
+                    'Nano Banana Pro': { x: 1020, y: 611 }
+                }
+            };
+
+            // 1. Switch Mode Strategy
+            await uiMutex.lock();
+            try {
+                try {
+                    this.log(`Attempting to switch to mode ${job.TYPE_VIDEO}...`);
+
+                    // Click somewhere safe to close any open menus first.
+                    await page.mouse.click(this.getRand(150), this.getRand(788));
+                    await this.sleep(500);
+
+                    // Open the Mode selector using the explicit recorded coordinate
+                    this.log(`Opening mode selector at ${coords.modes.trigger_t2v.x}, ${coords.modes.trigger_t2v.y}`);
+                    await page.mouse.click(this.getRand(coords.modes.trigger_t2v.x), this.getRand(coords.modes.trigger_t2v.y));
+                    await this.sleep(1000);
+
+                    if (coords.modes[job.TYPE_VIDEO]) {
+                        this.log(`Selecting mode ${job.TYPE_VIDEO} at ${coords.modes[job.TYPE_VIDEO].x}, ${coords.modes[job.TYPE_VIDEO].y}`);
+                        await page.mouse.click(this.getRand(coords.modes[job.TYPE_VIDEO].x), this.getRand(coords.modes[job.TYPE_VIDEO].y));
+                    } else {
+                        this.log(`Warning: Coordinate for mode ${job.TYPE_VIDEO} not found in map. Escaping mode switch.`);
+                        await page.mouse.click(this.getRand(150), this.getRand(788)); // Escape
                     }
-                    return null;
-                };
 
-                // Click the currently active chip to open the menu
-                let activeChip = findElByTextRegex([...targetTexts, ...otherTexts]);
-                if (activeChip && !activeChip.closest('[role="menu"]')) {
-                    const currentTxt = activeChip.textContent.trim().toLowerCase();
-                    const alreadyCorrect = targetTexts.some(t => currentTxt.includes(t));
+                    await this.sleep(1500);
 
-                    if (!alreadyCorrect) {
-                        activeChip.click(); // Open menu
-                        await new Promise(r => setTimeout(r, 1000));
+                } catch (e) {
+                    this.log(`Mode switch non-fatal error: ${e.message}`);
+                }
 
-                        // Find the correct option in the opened menu
-                        const menuItems = Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"], [role="menu"] li, [role="listbox"] [role="option"]'));
-                        let found = false;
-                        for (const item of menuItems) {
-                            const itemTxt = item.textContent.trim().toLowerCase();
-                            if (targetTexts.some(t => itemTxt.includes(t))) {
-                                item.click();
-                                found = true;
+                this.log(`Switched to mode ${job.TYPE_VIDEO}...`);
+                await this.sleep(1500);
+
+                // Clean prompt
+                let cleanPrompt = prompt.replace(/--ar\s+\d+[:-]\d+/gi, '').replace(/--ar \d+\/\d+/gi, '').trim();
+
+                const settings = job.settings || {};
+                const isImg = job.TYPE_VIDEO === 'IMG';
+                const currentSettings = isImg ? settings.imgSettings : settings.videoSettings;
+
+                const currentSettingsString = JSON.stringify(currentSettings);
+
+                if (currentSettings && (!this.settingsApplied || this.lastAppliedSettingsString !== currentSettingsString)) {
+                    this.log(`Applying settings for ${job.TYPE_VIDEO} via Explicit Coordinates with Randomness...`);
+                    try {
+                        // 1. Click Settings Button
+                        this.log(`Opening Settings modal (clicking ${coords.settingsBtn.x}, ${coords.settingsBtn.y})`);
+                        await page.mouse.click(this.getRand(coords.settingsBtn.x), this.getRand(coords.settingsBtn.y));
+                        await this.sleep(2000);
+
+                        try {
+                            // Debug screenshot removed by user request
+                            // const sPath = path.join(outputDir, `debug_settings_${job.JOB_ID}.png`);
+                            // await page.screenshot({ path: sPath });
+                            // this.log(`Debug Settings Screenshot saved to ${sPath}`);
+                        } catch (e) { }
+
+                        const applyStrictCoordSetting = async (labelKeyword, optionsCoordMap, settingValue) => {
+                            if (!settingValue) return;
+                            this.log(`Attempting to apply setting [${labelKeyword}] = ${settingValue} using strict coords...`);
+
+                            if (!optionsCoordMap.trigger) {
+                                this.log(`No trigger coordinate defined for [${labelKeyword}]. Skipping.`);
+                                return;
+                            }
+
+                            // 1. Click Trigger
+                            this.log(`Clicking [${labelKeyword}] trigger at ${optionsCoordMap.trigger.x}, ${optionsCoordMap.trigger.y}`);
+                            await page.mouse.click(this.getRand(optionsCoordMap.trigger.x), this.getRand(optionsCoordMap.trigger.y));
+                            await this.sleep(1500);
+
+                            // 2. Click Option
+                            const mappedCoord = optionsCoordMap[settingValue];
+                            if (mappedCoord) {
+                                this.log(`Clicking mapped option coord for ${settingValue} at ${mappedCoord.x}, ${mappedCoord.y}`);
+                                await page.mouse.click(this.getRand(mappedCoord.x), this.getRand(mappedCoord.y));
+                            } else {
+                                this.log(`No exact mapped coord for ${settingValue}. Clicking trigger again to close dropdown.`);
+                                await page.mouse.click(this.getRand(optionsCoordMap.trigger.x), this.getRand(optionsCoordMap.trigger.y));
+                            }
+                            await this.sleep(1500);
+                        };
+
+                        await applyStrictCoordSetting('Tỷ lệ', coords.ratio, currentSettings.ratio);
+                        await applyStrictCoordSetting('Đầu ra', coords.count, currentSettings.count?.toString());
+                        await applyStrictCoordSetting('Mô hình', coords.model, currentSettings.model);
+
+                        // Verify Settings before closing
+                        this.log(`Verifying applied settings before proceeding...`);
+                        const verificationResult = await page.evaluate((expected) => {
+                            const triggerTexts = Array.from(document.querySelectorAll('[role="combobox"], [aria-haspopup="listbox"], button'))
+                                .map(el => el.textContent.trim().toLowerCase());
+
+                            const allTexts = triggerTexts.concat(Array.from(document.querySelectorAll('span')).map(el => el.textContent.trim().toLowerCase()));
+
+                            let missing = [];
+
+                            if (expected.ratio) {
+                                const ratioMatch = allTexts.some(t => t.includes(expected.ratio.toLowerCase()));
+                                if (!ratioMatch) missing.push(`Ratio: ${expected.ratio}`);
+                            }
+
+                            if (expected.model) {
+                                const modelStr = expected.model.toLowerCase().replace(' [lower priority]', '');
+                                const modelMatch = allTexts.some(t => t.includes(modelStr));
+                                if (!modelMatch) missing.push(`Model: ${expected.model}`);
+                            }
+
+                            if (expected.count) {
+                                const countStr = expected.count.toString();
+                                const countMatch = allTexts.some(t => t === countStr || t === `x${countStr}` || t.includes(`${countStr} đầu ra`));
+                                if (!countMatch) missing.push(`Count: ${expected.count}`);
+                            }
+
+                            return missing;
+                        }, currentSettings);
+
+                        if (verificationResult.length > 0) {
+                            this.log(`Settings Verification Failed! Missing/Mismatched values: ${verificationResult.join(', ')}. Reloading page...`);
+                            await page.evaluate(() => window.location.reload());
+                            await this.sleep(4000);
+                            this.settingsApplied = false;
+                            throw new Error(`Settings Verification Failed! Missing/Mismatched values: ${verificationResult.join(', ')}. Generating will be aborted.`);
+                        } else {
+                            this.log(`Settings Verification Passed!`);
+                        }
+
+                        // Close Settings
+                        await page.mouse.click(this.getRand(950), this.getRand(788));
+                        await this.sleep(1500);
+
+                        this.settingsApplied = true;
+                        this.lastAppliedSettingsString = currentSettingsString;
+                    } catch (e) {
+                        this.log(`Failed to apply explicit coord settings: ${e.message}`);
+                        throw e; // Bubble up error so job fails and prompt is not generated
+                    }
+                } else if (currentSettings) {
+                    this.log(`Settings generation skipped (Already configured for ${job.TYPE_VIDEO}).`);
+                }
+
+                // 2. Input
+                const promptSelector = '#PINHOLE_TEXT_AREA_ELEMENT_ID';
+                try {
+                    await page.waitForSelector(promptSelector, { timeout: 10000 });
+                } catch (e) {
+                    this.log(`Failed to find text area: ${e.message}`);
+                    throw new Error("Text area not found. Is login required?");
+                }
+
+                await page.click(promptSelector);
+                await page.evaluate((selector) => {
+                    document.querySelector(selector).value = '';
+                }, promptSelector);
+                await this.sleep(400);
+
+                this.log(`Typing prompt (Length: ${cleanPrompt.length})...`);
+                await page.evaluate((selector, text) => {
+                    const el = document.querySelector(selector);
+                    el.focus();
+                    document.execCommand('insertText', false, text);
+                }, promptSelector, cleanPrompt);
+                await this.sleep(1000);
+
+                // 3. Generate
+                this.log('Clicking Generate/Submit...');
+                let clicked = false;
+
+                // Wait a bit for the button state to stabilize
+                await this.sleep(500);
+
+                // Attempt 1: Find the floating circle arrow button near the text area
+                clicked = await page.evaluate((selector) => {
+                    const textarea = document.querySelector(selector);
+                    if (!textarea) return false;
+
+                    // The submit button is typically inside a container right next to the textarea
+                    const fieldContainer = textarea.closest('div[style*="border-radius"], div[class*="container"]') || textarea.parentElement.parentElement;
+                    if (!fieldContainer) return false;
+
+                    const buttons = Array.from(fieldContainer.querySelectorAll('button:not([disabled]), div[role="button"]:not([disabled])'));
+
+                    // specifically look for the button with the arrow SVG or use it if it's the last icon button
+                    let submitBtn = null;
+                    for (const btn of buttons) {
+                        const svgs = btn.querySelectorAll('svg');
+                        for (const svg of svgs) {
+                            const path = svg.innerHTML || '';
+                            // Looking for arrow-forward path specifically 
+                            if (path.includes('arrow_forward') || path.includes('M5 13h11.17l-4.88 4.88c-.39.39-.39 1.03') || path.includes('m12 4-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z') || path.includes('M2.01 21 23 12 2.01 3 2 10l15 2-15 2z')) {
+                                submitBtn = btn;
                                 break;
                             }
                         }
-                        // Fallback if menu querySelector didn't work
-                        if (!found) {
-                            const options = findElByTextRegex(targetTexts);
-                            if (options) options.click();
+                        if (submitBtn) break;
+                    }
+
+                    // If no exact SVG match, the submit button is almost always the LAST circular icon button in the container
+                    if (!submitBtn) {
+                        const iconButtons = buttons.filter(b => b.textContent.replace(/\s/g, '') === '' && b.querySelector('svg'));
+                        if (iconButtons.length > 0) {
+                            submitBtn = iconButtons[iconButtons.length - 1]; // The one on the far right
                         }
                     }
-                } else {
-                    // direct fallback
-                    const btn = findElByTextRegex(targetTexts);
-                    if (btn) btn.click();
-                }
-            }, job.TYPE_VIDEO === 'IMG');
-            this.log(`Switched to ${job.TYPE_VIDEO === 'IMG' ? 'Image' : 'Video'} mode...`);
-            await this.sleep(1500);
 
-            // Handle Aspect Ratio (Cỡ) from prompt
-            let cleanPrompt = prompt;
-            let targetRatio = null;
-            if (prompt.includes('16:9') || prompt.includes('16/9')) targetRatio = '16:9';
-            else if (prompt.includes('9:16') || prompt.includes('9/16')) targetRatio = '9:16';
-            else if (prompt.includes('1:1')) targetRatio = '1:1';
-            else if (prompt.includes('4:3') || prompt.includes('4/3')) targetRatio = '4:3';
-            else if (prompt.includes('3:4') || prompt.includes('3/4')) targetRatio = '3:4';
-
-            cleanPrompt = prompt.replace(/--ar\s+\d+[:-]\d+/gi, '').replace(/--ar \d+\/\d+/gi, '').trim();
-
-            if (targetRatio) {
-                this.log(`Attempting to set Aspect Ratio to ${targetRatio}...`);
-                try {
-                    await page.evaluate(async (ratio) => {
-                        // Find the aspect ratio button (usually next to the model chip, looks like a rectangle or has ratio text)
-                        // It may have aria-label like "Tỷ lệ khung hình", "Aspect ratio", "Dimensions"
-                        const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
-                        let ratioBtn = buttons.find(b => {
-                            const label = (b.getAttribute('aria-label') || '').toLowerCase();
-                            const title = (b.getAttribute('title') || '').toLowerCase();
-                            return label.includes('tỷ lệ') || label.includes('aspect') || label.includes('ratio') || label.includes('khung hình') || label.includes(ratio) || title.includes('tỷ lệ');
-                        });
-
-                        // If not found by aria-label, try to find by svg or inner text
-                        if (!ratioBtn) {
-                            ratioBtn = buttons.find(b => b.textContent.includes(ratio));
-                        }
-
-                        if (ratioBtn) {
-                            ratioBtn.click();
-                            await new Promise(r => setTimeout(r, 1000));
-                            // Now find the option in the menu
-                            const options = Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"], [role="menu"] li, [role="listbox"] [role="option"]'));
-                            for (const opt of options) {
-                                if (opt.textContent.includes(ratio)) {
-                                    opt.click();
-                                    break;
-                                }
-                            }
-                        }
-                    }, targetRatio);
-                    await this.sleep(1000);
-                } catch (e) {
-                    this.log(`Failed to set aspect ratio: ${e.message}`);
-                }
-            }
-
-            // 2. Input
-            const promptSelector = '#PINHOLE_TEXT_AREA_ELEMENT_ID';
-            try {
-                await page.waitForSelector(promptSelector, { timeout: 10000 });
-            } catch (e) {
-                this.log(`Failed to find text area: ${e.message}`);
-                throw new Error("Text area not found. Is login required?");
-            }
-
-            await page.click(promptSelector);
-            await page.evaluate((selector) => {
-                document.querySelector(selector).value = '';
-            }, promptSelector);
-            await this.sleep(400);
-
-            this.log(`Typing prompt (Length: ${cleanPrompt.length})...`);
-            await page.evaluate((selector, text) => {
-                const el = document.querySelector(selector);
-                el.focus();
-                document.execCommand('insertText', false, text);
-            }, promptSelector, cleanPrompt);
-            await this.sleep(1000);
-
-            // 3. Generate
-            this.log('Clicking Generate/Submit...');
-            let clicked = false;
-
-            // Wait a bit for the button state to stabilize
-            await this.sleep(500);
-
-            // Attempt 1: Find the floating circle arrow button near the text area
-            clicked = await page.evaluate((selector) => {
-                const textarea = document.querySelector(selector);
-                if (!textarea) return false;
-
-                // The submit button is typically inside a container right next to the textarea
-                const fieldContainer = textarea.closest('div[style*="border-radius"], div[class*="container"]') || textarea.parentElement.parentElement;
-                if (!fieldContainer) return false;
-
-                const buttons = Array.from(fieldContainer.querySelectorAll('button:not([disabled]), div[role="button"]:not([disabled])'));
-
-                // specifically look for the button with the arrow SVG or use it if it's the last icon button
-                let submitBtn = null;
-                for (const btn of buttons) {
-                    const svgs = btn.querySelectorAll('svg');
-                    for (const svg of svgs) {
-                        const path = svg.innerHTML || '';
-                        // Looking for arrow-forward path specifically 
-                        if (path.includes('arrow_forward') || path.includes('M5 13h11.17l-4.88 4.88c-.39.39-.39 1.03') || path.includes('m12 4-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z') || path.includes('M2.01 21 23 12 2.01 3 2 10l15 2-15 2z')) {
-                            submitBtn = btn;
-                            break;
-                        }
+                    if (submitBtn) {
+                        submitBtn.click();
+                        return true;
                     }
-                    if (submitBtn) break;
-                }
 
-                // If no exact SVG match, the submit button is almost always the LAST circular icon button in the container
-                if (!submitBtn) {
-                    const iconButtons = buttons.filter(b => b.textContent.replace(/\s/g, '') === '' && b.querySelector('svg'));
-                    if (iconButtons.length > 0) {
-                        submitBtn = iconButtons[iconButtons.length - 1]; // The one on the far right
-                    }
-                }
-
-                if (submitBtn) {
-                    submitBtn.click();
-                    return true;
-                }
-
-                return false;
-            }, promptSelector);
-
-            if (clicked) {
-                this.log('Clicked submit arrow button.');
-            } else {
-                this.log('Pressing Enter as fallback...');
-                // The most reliable fallback is to focus the text area, move to end, and press Enter
-                await page.focus(promptSelector);
-                await page.evaluate((sel) => {
-                    const el = document.querySelector(sel);
-                    el.selectionStart = el.selectionEnd = el.value.length;
+                    return false;
                 }, promptSelector);
-                await page.keyboard.press('Enter');
+
+                if (clicked) {
+                    this.log('Clicked submit arrow button.');
+                } else {
+                    this.log('Pressing Enter as fallback...');
+                    // The most reliable fallback is to focus the text area, move to end, and press Enter
+                    await page.focus(promptSelector);
+                    await page.evaluate((sel) => {
+                        const el = document.querySelector(sel);
+                        el.selectionStart = el.selectionEnd = el.value.length;
+                    }, promptSelector);
+                    await page.keyboard.press('Enter');
+                }
+
+                // 4. Wait & Handle Errors during Generation
+            } catch (uiErr) {
+                this.log(`UI Interaction Error: ${uiErr.message}`);
+                throw uiErr;
+            } finally {
+                // Release the lock immediately after clicking generate so other workers can start configuring
+                uiMutex.unlock();
+                this.log('Released UI lock. Background generation beginning...');
             }
 
-            // 4. Wait & Handle Errors during Generation
             this.log('Waiting for generation (~60s)...');
             let generationStartedTime = Date.now();
             let hasError = false;
 
-            for (let i = 0; i < 60; i++) {
+            // Wait 90s for video, 60s for images
+            const waitSeconds = job.TYPE_VIDEO === 'IMG' ? 60 : 90;
+            this.log(`Waiting up to ${waitSeconds} seconds for generation to complete...`);
+
+            for (let i = 0; i < waitSeconds; i++) {
                 await this.sleep(1000);
 
                 // Check if the "Đã xảy ra lỗi" (Error occurred) dialog/text appeared
@@ -386,11 +524,12 @@ class AutomationWorker {
                 }
 
                 // If it successfully downloads or finishes, we'll just wait out the loop or break early if we implement progress tracking
-                // For now, simple fixed wait is fine if no error is seen. We wait the full 60 seconds.
+                // For now, simple fixed wait is fine if no error is seen. We wait the full assigned seconds.
             }
 
             if (hasError) {
                 await page.reload({ waitUntil: 'networkidle2' });
+                this.settingsApplied = false;
                 await this.sleep(5000);
                 throw new Error("Generation blocked by Google (Error screen). Auto-reloaded for next attempt.");
             }
@@ -401,15 +540,6 @@ class AutomationWorker {
 
         } catch (e) {
             this.log(`Job Failed: ${e.message}`);
-            try {
-                if (this.page) {
-                    const errorPath = path.join(outputDir, `error_${job.JOB_ID}.png`);
-                    await this.page.screenshot({ path: errorPath, fullPage: true });
-                    this.log(`Screenshot saved to: ${errorPath}`);
-                }
-            } catch (err) {
-                console.error("Failed to save error screenshot:", err);
-            }
             throw e;
         } finally {
             this.isBusy = false;
@@ -519,71 +649,76 @@ class AutomationWorker {
 
         if (!isElement) throw new Error("Download button not found");
 
-        const getFiles = () => fs.readdirSync(outputDir).filter(f => !f.endsWith('.crdownload') && !f.endsWith('.tmp'));
-        const before = getFiles();
+        await uiMutex.lock();
+        try {
+            const getFiles = () => fs.readdirSync(outputDir).filter(f => !f.endsWith('.crdownload') && !f.endsWith('.tmp'));
+            const before = getFiles();
 
-        await dlBtn.click();
-        await this.sleep(1000);
-
-        if (type === 'IMG') {
-            this.log('Selecting resolution...');
-            try {
-                const menuSelector = 'div[role="menu"]';
-                try {
-                    await page.waitForSelector(menuSelector, { timeout: 3000 });
-                    const item = await page.evaluateHandle(() => {
-                        const items = Array.from(document.querySelectorAll('div[role="menu"] li, div[role="menu"] div[role="menuitem"]'));
-                        for (const it of items) {
-                            if (it.textContent.includes('1K') || it.textContent.includes('Original') || it.textContent.includes('High')) return it;
-                        }
-                        return items[0];
-                    });
-                    if (item) await item.click();
-                } catch (e) { }
-            } catch (e) { }
-        } else {
-            try {
-                const quality = await page.waitForSelector('xpath///div[contains(text(), "720p")] | //span[contains(text(), "720p")]', { timeout: 3000 });
-                if (quality) await quality.click();
-            } catch (e) { }
-        }
-
-        this.log('Waiting for file system...');
-        let newFile = null;
-        let latestTime = 0;
-
-        for (let i = 0; i < 60; i++) {
+            await dlBtn.click();
             await this.sleep(1000);
-            const now = getFiles();
-            const diff = now.filter(f => !before.includes(f));
 
-            if (diff.length > 0) {
-                // If there are multiple new files, pick the most recently modified one
-                for (const f of diff) {
+            if (type === 'IMG') {
+                this.log('Selecting resolution...');
+                try {
+                    const menuSelector = 'div[role="menu"]';
                     try {
-                        const stat = fs.statSync(path.join(outputDir, f));
-                        if (stat.mtimeMs > latestTime) {
-                            latestTime = stat.mtimeMs;
-                            newFile = f;
-                        }
+                        await page.waitForSelector(menuSelector, { timeout: 3000 });
+                        const item = await page.evaluateHandle(() => {
+                            const items = Array.from(document.querySelectorAll('div[role="menu"] li, div[role="menu"] div[role="menuitem"]'));
+                            for (const it of items) {
+                                if (it.textContent.includes('1K') || it.textContent.includes('Original') || it.textContent.includes('High')) return it;
+                            }
+                            return items[0];
+                        });
+                        if (item) await item.click();
                     } catch (e) { }
-                }
-
-                if (newFile) break;
+                } catch (e) { }
+            } else {
+                try {
+                    const quality = await page.waitForSelector('xpath///div[contains(text(), "720p")] | //span[contains(text(), "720p")]', { timeout: 3000 });
+                    if (quality) await quality.click();
+                } catch (e) { }
             }
-        }
 
-        if (newFile) {
-            this.log(`Downloaded: ${newFile}`);
-            const ext = path.extname(newFile);
-            const safeName = targetName.replace(/[<>:"/\\|?*]/g, '_');
-            const oldPath = path.join(outputDir, newFile);
-            const newPath = path.join(outputDir, `${safeName}${ext}`);
+            this.log('Waiting for file system...');
+            let newFile = null;
+            let latestTime = 0;
 
-            if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
-            fs.renameSync(oldPath, newPath);
-        } else {
-            throw new Error("Download timeout");
+            for (let i = 0; i < 60; i++) {
+                await this.sleep(1000);
+                const now = getFiles();
+                const diff = now.filter(f => !before.includes(f));
+
+                if (diff.length > 0) {
+                    // If there are multiple new files, pick the most recently modified one
+                    for (const f of diff) {
+                        try {
+                            const stat = fs.statSync(path.join(outputDir, f));
+                            if (stat.mtimeMs > latestTime) {
+                                latestTime = stat.mtimeMs;
+                                newFile = f;
+                            }
+                        } catch (e) { }
+                    }
+
+                    if (newFile) break;
+                }
+            }
+
+            if (newFile) {
+                this.log(`Downloaded: ${newFile}`);
+                const ext = path.extname(newFile);
+                const safeName = targetName.replace(/[<>:"/\\|?*]/g, '_');
+                const oldPath = path.join(outputDir, newFile);
+                const newPath = path.join(outputDir, `${safeName}${ext}`);
+
+                if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
+                fs.renameSync(oldPath, newPath);
+            } else {
+                throw new Error("Download timeout");
+            }
+        } finally {
+            uiMutex.unlock();
         }
     }
 

@@ -62,6 +62,15 @@ app.get('/api/pick-folder', (req, res) => {
     res.json({ path });
 });
 
+app.get('/api/version', (req, res) => {
+    try {
+        const pkg = require('./package.json');
+        res.json({ version: pkg.version });
+    } catch {
+        res.json({ version: 'Unknown' });
+    }
+});
+
 app.post('/api/clear-retries', (req, res) => {
     const { inputDir } = req.body;
     if (!inputDir) return res.status(400).json({ error: "Missing input path" });
@@ -107,7 +116,7 @@ app.post('/api/clear-retries', (req, res) => {
 let automationInstance = null;
 
 app.post('/api/start', async (req, res) => {
-    const { inputDir, workerCount = 1, browserType = 'edge' } = req.body;
+    const { inputDir, workerCount = 1, browserType = 'edge', videoSettings, imgSettings } = req.body;
     if (!inputDir) return res.status(400).json({ error: "Missing input path" });
 
     if (automationInstance && automationInstance.isRunning) {
@@ -115,7 +124,7 @@ app.post('/api/start', async (req, res) => {
     }
 
     // Initialize Master Automation
-    automationInstance = new AutomationService(io, inputDir, parseInt(workerCount), browserType);
+    automationInstance = new AutomationService(io, inputDir, parseInt(workerCount), browserType, { videoSettings, imgSettings });
     try {
         automationInstance.start();
     } catch (e) {
@@ -126,16 +135,48 @@ app.post('/api/start', async (req, res) => {
     res.json({ status: "started" });
 });
 
+app.post('/api/restart-worker', async (req, res) => {
+    const { id, browserType = 'edge' } = req.body;
+    if (automationInstance && automationInstance.isRunning) {
+        await automationInstance.restartWorker(id, browserType);
+        res.json({ status: 'restarted' });
+    } else {
+        res.status(400).json({ error: "Automation is not running." });
+    }
+});
+
 app.post('/api/open-profile', async (req, res) => {
     const { id, browserType = 'edge' } = req.body;
-    // Temp instance just to open profile
+    // Temp instance just to open profile manually when automation is offline
     const srv = new AutomationService(io, './', 1, browserType);
-    // We don't track this instance for automation, just fire and forget (or keep ref to close?)
-    // For manual login, user will close it manually usually.
-    // Or we keep it in a separate list? 
-    // Let's just launch it.
     await srv.openProfile(id);
     res.json({ status: 'opened' });
+});
+
+app.post('/api/reset-profile', async (req, res) => {
+    const { ids } = req.body; // Expecting an array of profile IDs [1, 2, ...]
+
+    // Safety check
+    if (automationInstance && automationInstance.isRunning) {
+        return res.status(400).json({ error: "Vui lòng dừng Automation trước khi Reset Profile." });
+    }
+
+    try {
+        const baseDir = process.env.USER_DATA_PATH || path.resolve('./user_data');
+        let deletedCount = 0;
+
+        for (const id of ids) {
+            const profilePath = path.join(baseDir, `profile_${id}`);
+            if (fs.existsSync(profilePath)) {
+                fs.rmSync(profilePath, { recursive: true, force: true });
+                deletedCount++;
+            }
+        }
+        res.json({ status: 'success', deletedCount });
+    } catch (e) {
+        console.error("Reset profile error:", e);
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.post('/api/stop', async (req, res) => {
@@ -179,10 +220,70 @@ app.post('/api/install-update', (req, res) => {
     }, 1000);
 });
 
+app.get('/api/check-update', async (req, res) => {
+    try {
+        const updateCheckResult = await autoUpdater.checkForUpdates();
+        if (updateCheckResult && updateCheckResult.updateInfo) {
+            res.json({ status: "success", info: updateCheckResult.updateInfo });
+        } else {
+            res.json({ status: "no-update" });
+        }
+    } catch (e) {
+        console.error("Update check error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/download-update', async (req, res) => {
+    try {
+        // We trigger the download. 
+        // We will notify the client via socket when download is complete.
+        autoUpdater.downloadUpdate();
+        res.json({ status: "downloading" });
+    } catch (e) {
+        console.error("Download update error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/install-update', (req, res) => {
+    res.json({ status: "installing" });
+    setTimeout(() => {
+        autoUpdater.quitAndInstall();
+    }, 1000);
+});
+
 // --- Socket Connection ---
 io.on('connection', (socket) => {
     console.log('Client connected');
     socket.emit('log', 'Connected to server.');
+});
+
+// AutoUpdater events to socket
+autoUpdater.on('update-available', (info) => {
+    io.emit('log', `Update available: ${info.version}`);
+    io.emit('update-status', { status: 'available', version: info.version });
+});
+
+autoUpdater.on('update-not-available', (info) => {
+    io.emit('log', 'You are on the latest version.');
+    io.emit('update-status', { status: 'up-to-date' });
+});
+
+autoUpdater.on('error', (err) => {
+    io.emit('log', 'Error in auto-updater: ' + err.toString());
+    io.emit('update-status', { status: 'error', error: err.toString() });
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+    let log_message = `Download speed: ${Math.round(progressObj.bytesPerSecond / 1024)} KB/s`;
+    log_message = log_message + ' - Downloaded ' + Math.round(progressObj.percent) + '%';
+    io.emit('update-progress', { percent: progressObj.percent });
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+    io.emit('log', 'Update downloaded! Ready to install.');
+    io.emit('update-status', { status: 'downloaded' });
 });
 
 // AutoUpdater events to socket

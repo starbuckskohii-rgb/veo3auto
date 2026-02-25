@@ -95,16 +95,17 @@ async function run() {
         const options = {
             headless: false,
             turnstile: true,
+            ignoreAllFlags: true,
             args: [
                 '--start-maximized',
-                '--disable-blink-features=AutomationControlled',
-                '--disable-features=IsolateOrigins,site-per-process',
+                '--disable-features=IsolateOrigins,site-per-process,AutomationControlled',
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
                 '--disable-gpu',
                 '--no-first-run',
                 '--no-default-browser-check',
-                '--no-zygote'
+                '--no-zygote',
+                '--disable-infobars'
             ],
             customConfig: {},
             connectOption: {
@@ -480,22 +481,22 @@ async function run() {
                     }
 
                 } else {
-                    console.log('Download button NOT found on card. Dumping HTML...');
-                    const cardHtml = await page.evaluate(el => el.outerHTML, cardHandle);
-                    fs.writeFileSync(`card_debug_${Date.now()}.html`, cardHtml);
-                    console.log('Saved card_debug.html');
-                    await page.screenshot({ path: `debug_dl_btn_fail_${Date.now()}.png` });
+                    console.log('Download button NOT found on card.');
+                    // const cardHtml = await page.evaluate(el => el.outerHTML, cardHandle);
+                    // fs.writeFileSync(`card_debug_${Date.now()}.html`, cardHtml);
+                    // console.log('Saved card_debug.html');
+                    // await page.screenshot({ path: `debug_dl_btn_fail_${Date.now()}.png` });
                 }
 
             } catch (dlErr) {
                 console.log('Error in download phase:', dlErr.message);
                 // Try dumping card HTML if available
-                await page.screenshot({ path: `debug_error_${Date.now()}.png` });
+                // await page.screenshot({ path: `debug_error_${Date.now()}.png` });
             }
 
         } catch (e) {
             console.log(`Error processing prompt "${targetName}":`, e.message);
-            await page.screenshot({ path: `debug_step_fail_${Date.now()}.png` });
+            // await page.screenshot({ path: `debug_step_fail_${Date.now()}.png` });
         }
     }
 

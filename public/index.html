@@ -15,17 +15,30 @@
 <body>
     <div class="app-container">
         <!-- Sidebar -->
-        <aside class="sidebar glass">
-            <div class="logo">
-                <h2>⚡ Veo3 Auto</h2>
+        <aside class="sidebar glass" style="display: flex; flex-direction: column; height: calc(100vh - 32px); gap: 0;">
+            <div class="logo"
+                style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 16px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <h2 style="font-size: 1.5rem; margin: 0; white-space: nowrap; letter-spacing: -0.5px;">⚡ Veo3 Auto
+                    </h2>
+                    <span id="appVersion"
+                        style="font-size: 0.75rem; color: var(--accent-color); background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.2); padding: 4px 10px; border-radius: 12px; font-weight: 600;">v...</span>
+                </div>
+                <div class="server-status" title="Server Connection"
+                    style="display: flex; align-items: center; background: rgba(0,0,0,0.02); padding: 6px 12px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.04);">
+                    <span id="connectionDot"
+                        style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--success-color); box-shadow: 0 0 8px var(--success-color);"></span>
+                    <span id="connectionText"
+                        style="font-size: 0.85rem; color: var(--text-secondary); margin-left: 8px; font-weight: 500;">Connected</span>
+                </div>
             </div>
 
-            <div class="controls">
+            <div class="controls"
+                style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-right: 4px; border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 16px; margin-bottom: 16px;">
                 <div class="control-group">
                     <label>Input Folder (Excel Files)</label>
                     <div class="input-row">
-                        <input type="text" id="inputPath"
-                            placeholder="Select or paste folder path containing .xlsx files">
+                        <input type="text" id="inputPath" placeholder="Select or paste folder path">
                         <button id="btnPickInput" class="icon-btn" title="Pick Folder">📂</button>
                     </div>
                 </div>
@@ -33,45 +46,100 @@
                 <div class="control-group">
                     <label>Browser Selection</label>
                     <select id="browserSelect" class="input-row"
-                        style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.2); color: white;">
+                        style="width: 100%; padding: 10px; border-radius: 12px; border: 1px solid var(--glass-border); background: white; color: var(--text-primary); font-size: 0.9rem; cursor: pointer;">
                         <option value="edge">Microsoft Edge (Recommended - AntiBot bypass)</option>
                         <option value="chrome">Chrome / Chromium (Legacy)</option>
                     </select>
                 </div>
 
-                <div class="control-group" style="margin-top: 8px;">
-                    <label>Worker Threads: <span id="workerCountVal"
-                            style="color:white; font-weight:bold;">1</span></label>
-                    <input type="range" id="workerCount" min="1" max="5" value="1" step="1">
-                    <small style="color: #aaa; font-size: 0.8em; margin-top: 4px; display: block;">Recommended: 1-2 for
-                        stability</small>
-                </div>
-
-                <div class="control-group">
-                    <label>Manual Login (Profiles)</label>
-                    <div class="profile-buttons">
-                        <button onclick="openProfile(1)" class="small-btn">Profile 1</button>
-                        <button onclick="openProfile(2)" class="small-btn">Profile 2</button>
-                        <button onclick="openProfile(3)" class="small-btn">Profile 3</button>
+                <!-- Video Settings -->
+                <div class="control-group" style="border-top: 1px solid rgba(0,0,0,0.05); padding-top: 16px;">
+                    <label
+                        style="color: #3b82f6; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                        🎬 Video Settings
+                    </label>
+                    <div class="settings-grid">
+                        <select id="videoRatio" class="small-select">
+                            <option value="16:9">Tỷ lệ 16:9</option>
+                            <option value="9:16">Tỷ lệ 9:16</option>
+                        </select>
+                        <select id="videoCount" class="small-select">
+                            <option value="1">1 Đầu ra</option>
+                            <option value="2">2 Đầu ra</option>
+                            <option value="3">3 Đầu ra</option>
+                            <option value="4">4 Đầu ra</option>
+                        </select>
+                        <select id="videoModel" class="small-select" style="grid-column: span 2;">
+                            <option value="Veo 3.1 - Fast">Veo 3.1 - Fast</option>
+                            <option value="Veo 3.1 - Fast [Lower Priority]">Veo 3.1 - Fast [Lower Priority]</option>
+                        </select>
                     </div>
                 </div>
 
-                <div class="control-group" style="margin-top: 8px;">
-                    <button id="btnClearRetries" class="secondary-btn">🧹 Clear Excel Retries</button>
-                    <button id="btnCheckUpdate" class="small-btn" style="margin-top: 8px; width: 100%;">🔄 Check for
-                        Updates</button>
+                <!-- Image Settings -->
+                <div class="control-group" style="border-top: 1px solid rgba(0,0,0,0.05); padding-top: 16px;">
+                    <label
+                        style="color: #10b981; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                        🖼️ Image Settings
+                    </label>
+                    <div class="settings-grid">
+                        <select id="imgRatio" class="small-select">
+                            <option value="16:9">Tỷ lệ 16:9</option>
+                            <option value="9:16">Tỷ lệ 9:16</option>
+                        </select>
+                        <select id="imgCount" class="small-select">
+                            <option value="1">1 Đầu ra</option>
+                            <option value="2">2 Đầu ra</option>
+                            <option value="3">3 Đầu ra</option>
+                            <option value="4">4 Đầu ra</option>
+                        </select>
+                        <select id="imgModel" class="small-select" style="grid-column: span 2;">
+                            <option value="Nano Banana Pro">Nano Banana Pro</option>
+                        </select>
+                    </div>
                 </div>
 
-                <div class="actions" style="margin-top: auto; padding-top: 16px;">
-                    <button id="btnStart" class="primary-btn">▶ Start Automation</button>
-                    <button id="btnStop" class="danger-btn hidden">⏹ Stop</button>
+                <div class="control-group" style="border-top: 1px solid rgba(0,0,0,0.05); padding-top: 16px;">
+                    <label>Worker Threads</label>
+                    <div class="input-row" style="margin-bottom: 8px;">
+                        <input type="range" id="workerCount" min="1" max="20" value="1" step="1"
+                            style="flex: 1; accent-color: var(--accent-color);">
+                        <input type="number" id="workerCountInput" min="1" max="20" value="1"
+                            style="width: 60px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--glass-border); background: white; color: var(--text-primary); text-align: center; font-weight: 500;">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <label style="margin: 0;">Worker Management</label>
+                        <button id="btnToggleReset" class="icon-btn"
+                            style="height: 28px; padding: 0 10px; font-size: 0.8rem; background: rgba(239, 68, 68, 0.05); border-color: rgba(239, 68, 68, 0.2); color: var(--danger-color); border-radius: 8px; font-weight: 500;"
+                            title="Bật/Tắt chế độ Xóa Profile">🗑️ Xoá Data</button>
+                    </div>
+                    <div id="workerGrid" class="worker-grid">
+                        <!-- Worker buttons injected here dynamically -->
+                    </div>
+                </div>
+
+                <div class="control-group" style="margin-top: auto; padding-top: 8px;">
+                    <button id="btnClearRetries" class="secondary-btn"
+                        style="background: rgba(245, 158, 11, 0.05); border-color: rgba(245, 158, 11, 0.2); color: #b45309; margin-bottom: 8px;">🧹
+                        Clear Excel Retries</button>
+                    <button id="btnCheckUpdate" class="small-btn"
+                        style="width: 100%; border-radius: 12px; padding: 10px;">🔄 Check for Updates</button>
                 </div>
             </div>
 
-            <div class="status-panel">
-                <h3>Status</h3>
-                <div id="connectionStatus" class="badge">Connected</div>
-                <div id="activeJob" class="info-text">Idle</div>
+            <div class="actions" style="margin-top: 0;">
+                <button id="btnStart" class="primary-btn"
+                    style="font-size: 1.05rem; padding: 16px; box-shadow: 0 6px 20px -4px rgba(37,99,235,0.4); display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.3s ease;">
+                    <svg id="startIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    <span id="startText">Start Automation</span>
+                </button>
             </div>
         </aside>
 
@@ -79,24 +147,31 @@
         <main class="main-content">
             <!-- Stats Row -->
             <div class="stats-row">
-                <div class="stat-card glass">
-                    <h3>Total Jobs</h3>
-                    <span id="statTotal">0</span>
+                <div class="stat-card glass"
+                    style="border-bottom: 4px solid #3b82f6; box-shadow: 0 10px 15px -3px rgba(59,130,246,0.1);">
+                    <h3 style="display: flex; align-items: center; gap: 6px;"><span style="font-size: 1.1rem;">📊</span>
+                        Total Jobs</h3>
+                    <span id="statTotal" style="color: #3b82f6;">0</span>
                 </div>
-                <div class="stat-card glass">
-                    <h3>Completed</h3>
+                <div class="stat-card glass"
+                    style="border-bottom: 4px solid var(--success-color); box-shadow: 0 10px 15px -3px rgba(5,150,105,0.1);">
+                    <h3 style="display: flex; align-items: center; gap: 6px;"><span style="font-size: 1.1rem;">✅</span>
+                        Completed</h3>
                     <span id="statCompleted" class="text-success">0</span>
                 </div>
-                <div class="stat-card glass">
-                    <h3>Pending</h3>
+                <div class="stat-card glass"
+                    style="border-bottom: 4px solid var(--warning-color); box-shadow: 0 10px 15px -3px rgba(217,119,6,0.1);">
+                    <h3 style="display: flex; align-items: center; gap: 6px;"><span style="font-size: 1.1rem;">⏳</span>
+                        Pending</h3>
                     <span id="statPending" class="text-warning">0</span>
                 </div>
             </div>
 
             <!-- Job Table -->
-            <div class="table-container glass">
+            <div class="table-container glass"
+                style="overflow-y: auto; max-height: 400px; /* or set explicit height/flex */">
                 <table>
-                    <thead>
+                    <thead style="position: sticky; top: 0; background: var(--bg-color); z-index: 10;">
                         <tr>
                             <th>Job ID</th>
                             <th>Prompt</th>
