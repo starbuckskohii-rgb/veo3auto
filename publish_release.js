@@ -1,13 +1,17 @@
 const fs = require('fs');
 const path = require('path');
+const pkg = require('./package.json');
 
-const GITHUB_TOKEN = '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';
+const GITHUB_TOKEN = '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';
 const REPO_OWNER = 'starbuckskohii-rgb';
 const REPO_NAME = 'veo3auto';
-const TAG_NAME = 'v1.0.10';
-const RELEASE_NAME = 'Veo3 Auto v1.0.10 (Profile Fix, Login Wait, Auto Update)';
-const ASSET_PATH = path.resolve('dist/Veo3 Auto Setup 1.0.10.exe');
-const ASSET_NAME = 'Veo3 Auto Setup 1.0.10.exe';
+const VERSION = pkg.version;
+const TAG_NAME = `v${VERSION}`;
+const RELEASE_NAME = `Veo3 Auto v${VERSION} (Image Upload & UI Verification Fixes)`;
+const ASSETS_TO_UPLOAD = [
+    { path: path.resolve(`dist/Veo3.Auto.Setup.${VERSION}.exe`), name: `Veo3.Auto.Setup.${VERSION}.exe` },
+    { path: path.resolve('dist/latest.yml'), name: 'latest.yml' }
+];
 
 async function createRelease() {
     console.log(`Creating release ${TAG_NAME}...`);
@@ -58,47 +62,48 @@ async function getReleaseByTag() {
     return await response.json();
 }
 
-async function uploadAsset(release) {
-    if (!fs.existsSync(ASSET_PATH)) {
-        console.error(`Asset not found: ${ASSET_PATH}`);
-        process.exit(1);
+async function uploadAssets(release) {
+    for (const asset of ASSETS_TO_UPLOAD) {
+        if (!fs.existsSync(asset.path)) {
+            console.error(`Asset not found: ${asset.path}`);
+            continue;
+        }
+
+        const stats = fs.statSync(asset.path);
+        const fileSize = stats.size;
+
+        // Check if asset already exists
+        const existingAsset = release.assets.find(a => a.name === asset.name);
+        if (existingAsset) {
+            console.log(`Asset ${asset.name} already exists, deleting old one...`);
+            await deleteAsset(existingAsset.id);
+        }
+
+        console.log(`Uploading ${asset.name} (${(fileSize / 1024 / 1024).toFixed(2)} MB)...`);
+
+        const uploadUrl = release.upload_url.replace('{?name,label}', `?name=${asset.name}`);
+        const fileStream = fs.readFileSync(asset.path);
+
+        const response = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `token ${GITHUB_TOKEN}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'Content-Type': 'application/octet-stream',
+                'Content-Length': fileSize,
+                'User-Agent': 'Veo3-Release-Script'
+            },
+            body: fileStream
+        });
+
+        if (!response.ok) {
+            console.error(`Failed to upload asset ${asset.name}:`, await response.text());
+            continue;
+        }
+
+        const data = await response.json();
+        console.log(`Asset ${asset.name} uploaded successfully: ${data.browser_download_url}`);
     }
-
-    const stats = fs.statSync(ASSET_PATH);
-    const fileSize = stats.size;
-
-    // Check if asset already exists
-    const existingAsset = release.assets.find(a => a.name === ASSET_NAME);
-    if (existingAsset) {
-        console.log('Asset already exists, deleting old one...');
-        await deleteAsset(existingAsset.id);
-    }
-
-    console.log(`Uploading ${ASSET_NAME} (${(fileSize / 1024 / 1024).toFixed(2)} MB)...`);
-
-    const uploadUrl = release.upload_url.replace('{?name,label}', `?name=${ASSET_NAME}`);
-
-    const fileStream = fs.readFileSync(ASSET_PATH);
-
-    const response = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-            'Authorization': `token ${GITHUB_TOKEN}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'Content-Type': 'application/vnd.microsoft.portable-executable',
-            'Content-Length': fileSize,
-            'User-Agent': 'Veo3-Release-Script'
-        },
-        body: fileStream
-    });
-
-    if (!response.ok) {
-        console.error('Failed to upload asset:', await response.text());
-        process.exit(1);
-    }
-
-    const data = await response.json();
-    console.log(`Asset uploaded successfully: ${data.browser_download_url}`);
 }
 
 async function deleteAsset(assetId) {
@@ -114,7 +119,7 @@ async function deleteAsset(assetId) {
 (async () => {
     try {
         const release = await createRelease();
-        await uploadAsset(release);
+        await uploadAssets(release);
         console.log('Done!');
     } catch (e) {
         console.error(e);

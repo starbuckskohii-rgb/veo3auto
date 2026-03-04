@@ -22,6 +22,10 @@ class AutomationService {
         this.lastScanTime = 0;
         this.scanInterval = 3 * 60 * 1000; // 3 minutes
         this.isProcessing = false;
+
+        // Excel File I/O Queue setup for concurrent workers (20 threaded)
+        this.excelUpdateQueue = [];
+        this.isUpdatingExcel = false;
     }
 
     log(message) {
@@ -52,65 +56,88 @@ class AutomationService {
         }
     }
 
-    scanActiveFile(fileName) {
+    async scanAllFiles() {
         this.lastScanTime = Date.now();
-        const filePath = path.join(this.inputFolder, fileName);
         this.localQueue = [];
 
         try {
-            const workbook = xlsx.readFile(filePath);
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            const rawData = xlsx.utils.sheet_to_json(worksheet, { defval: "" });
+            const files = fs.readdirSync(this.inputFolder).filter(f => f.endsWith('.xlsx') && !f.startsWith('~$'));
 
-            rawData.forEach((row, rIndex) => {
-                const status = (row['STATUS'] || '').toLowerCase();
-                const retryCount = parseInt(row['RETRY_COUNT'] || '0') || 0;
-
-                if (status !== 'completed' && status !== 'failed' && status !== 'skipped' && retryCount < 3) {
-                    const typeVideo = (row['TYPE_VIDEO'] || '').toUpperCase();
-                    const img1 = row['IMAGE_PATH'] || '';
-                    const img2 = row['IMAGE_PATH_2'] || '';
-                    const img3 = row['IMAGE_PATH_3'] || '';
-                    const hasImages = img1 !== '' || img2 !== '' || img3 !== '';
-
-                    let computedType = '';
-                    if (!row['TYPE_VIDEO'] || typeVideo === '') computedType = 'T2V';
-                    else if (typeVideo === 'IMG') computedType = 'IMG';
-                    else if (typeVideo === 'IN2V' && !hasImages) computedType = 'T2V';
-                    else if (typeVideo === 'IN2V' && hasImages) computedType = 'IN2V';
-                    else if (typeVideo === 'I2V' && !hasImages) computedType = 'T2V';
-                    else if (typeVideo === 'I2V' && hasImages) computedType = 'I2V';
-                    else computedType = 'T2V';
-
-                    const jobID = row['JOB_ID'] || `JOB_${fileName}_${rIndex}`;
-
-                    if (!this.inProgressJobs.has(jobID)) {
-                        this.localQueue.push({
-                            fileName: fileName,
-                            filePath: filePath,
-                            rowIndex: rIndex,
-                            sheetName: sheetName,
-                            jobData: {
-                                JOB_ID: jobID,
-                                PROMPT: row['PROMPT'] || row['prompt'] || '',
-                                STATUS: row['STATUS'] || '',
-                                VIDEO_NAME: row['VIDEO_NAME'] || row['name'] || `video_${Date.now()}_${rIndex}`,
-                                TYPE_VIDEO: computedType,
-                                ORIGINAL_TYPE_VIDEO: typeVideo,
-                                settings: this.settings,
-                                RETRY_COUNT: retryCount
-                            }
-                        });
+            for (const fileName of files) {
+                const filePath = path.join(this.inputFolder, fileName);
+                let workbook = null;
+                for (let i = 0; i < 3; i++) {
+                    try {
+                        workbook = xlsx.readFile(filePath);
+                        break;
+                    } catch (e) {
+                        await this.sleep(300);
                     }
                 }
-            });
-            this.io.emit('job-list', this.localQueue.map(q => q.jobData));
+                if (!workbook) {
+                    this.log(`⚠️ Lỗi: Không thể đọc file ${fileName} dù đã thử 3 lần (có thể do tiến trình khác đang khóa). Bỏ qua file này.`);
+                    continue;
+                }
+
+                try {
+                    const sheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+                    const rawData = xlsx.utils.sheet_to_json(worksheet, { defval: "" });
+
+                    rawData.forEach((row, rIndex) => {
+                        const status = (row['STATUS'] || '').toLowerCase();
+                        const retryCount = parseInt(row['RETRY_COUNT'] || '0') || 0;
+
+                        // Include 'processing' but skip if it is ALREADY running. Ensures crashed jobs get recovered!
+                        if (status !== 'completed' && status !== 'failed' && status !== 'skipped' && retryCount < 3) {
+                            const typeVideo = (row['TYPE_VIDEO'] || '').toUpperCase();
+                            const img1 = row['IMAGE_PATH'] || '';
+                            const img2 = row['IMAGE_PATH_2'] || '';
+                            const img3 = row['IMAGE_PATH_3'] || '';
+                            const hasImages = img1 !== '' || img2 !== '' || img3 !== '';
+
+                            let computedType = '';
+                            if (!row['TYPE_VIDEO'] || typeVideo === '') computedType = 'T2V';
+                            else if (typeVideo === 'IMG') computedType = 'IMG';
+                            else if (typeVideo === 'IN2V' && !hasImages) computedType = 'T2V';
+                            else if (typeVideo === 'IN2V' && hasImages) computedType = 'IN2V';
+                            else if (typeVideo === 'I2V' && !hasImages) computedType = 'T2V';
+                            else if (typeVideo === 'I2V' && hasImages) computedType = 'I2V';
+                            else computedType = 'T2V';
+
+                            const jobID = row['JOB_ID'] || `JOB_${fileName}_${rIndex}`;
+
+                            if (!this.inProgressJobs.has(jobID)) {
+                                this.localQueue.push({
+                                    fileName: fileName,
+                                    filePath: filePath,
+                                    rowIndex: rIndex,
+                                    sheetName: sheetName,
+                                    jobData: {
+                                        JOB_ID: jobID,
+                                        PROMPT: row['PROMPT'] || row['prompt'] || '',
+                                        STATUS: row['STATUS'] || '',
+                                        VIDEO_NAME: row['VIDEO_NAME'] || row['name'] || `video_${Date.now()}_${rIndex}`,
+                                        TYPE_VIDEO: computedType,
+                                        ORIGINAL_TYPE_VIDEO: typeVideo,
+                                        settings: this.settings,
+                                        RETRY_COUNT: retryCount
+                                    }
+                                });
+                            }
+                        }
+                    });
+                } catch (err) {
+                    this.log(`Lỗi khi quét file ${fileName}: ${err.message}`);
+                }
+            }
+            if (this.localQueue.length > 0) {
+                this.io.emit('job-list', this.localQueue.map(q => q.jobData));
+            }
         } catch (e) {
-            this.log(`Error scanning file ${fileName}: ${e.message}`);
+            this.log(`Lỗi quét thư mục chung: ${e.message}`);
         }
     }
-
     hasPendingJobs(fileName) {
         try {
             const filePath = path.join(this.inputFolder, fileName);
@@ -137,9 +164,9 @@ class AutomationService {
         while (this.isRunning) {
             const now = Date.now();
 
-            if (this.activeFile && (now - this.lastScanTime > this.scanInterval)) {
-                this.log(`3 phút đã trôi qua. Đang quét lại file hiện tại xem có cập nhật không: ${this.activeFile}`);
-                this.scanActiveFile(this.activeFile);
+            if (now - this.lastScanTime > this.scanInterval) {
+                this.log(`3 phút đã trôi qua. Đang quét lại toàn bộ thư mục xem có cập nhật không...`);
+                await this.scanAllFiles();
             }
 
             if (this.localQueue.length > 0) {
@@ -164,36 +191,15 @@ class AutomationService {
                 }
             } else {
                 // Queue is empty. 
-                if (this.activeFile) {
-                    // If jobs are still running, just wait.
-                    if (this.inProgressJobs.size === 0) {
-                        this.log(`Đang quét file để xác nhận hoàn tất: ${this.activeFile}`);
-                        this.scanActiveFile(this.activeFile);
-                        if (this.localQueue.length === 0) {
-                            this.log(`File ${this.activeFile} đã chạy xong 100%. Chuyển sang file tiếp theo.`);
-                            this.activeFile = null;
-                        }
-                    } else {
-                        await this.sleep(2000);
-                    }
+                // If jobs are still running, just wait.
+                if (this.inProgressJobs.size > 0) {
+                    await this.sleep(2000);
                 } else {
-                    // Look for a new active file
+                    // All queues empty and no jobs running. Scan for new files.
                     try {
-                        let tempFiles = fs.readdirSync(this.inputFolder).filter(f => f.endsWith('.xlsx') && !f.startsWith('~$'));
-                        let foundFile = null;
-                        for (const file of tempFiles) {
-                            if (this.hasPendingJobs(file)) {
-                                foundFile = file;
-                                break;
-                            }
-                        }
-
-                        if (foundFile) {
-                            this.activeFile = foundFile;
-                            this.log(`Bắt đầu xử lý file Excel: ${this.activeFile}`);
-                            this.scanActiveFile(this.activeFile);
-                        } else {
-                            // No files have pending jobs. Wait before full rescan.
+                        await this.scanAllFiles();
+                        if (this.localQueue.length === 0) {
+                            // Still empty after scan, wait heavily
                             if (this.workers.every(w => !w.isBusy)) {
                                 this.log('Tất cả file đã hoàn tất. Đợi 3 phút trước khi quét lại toàn bộ thư mục...');
                                 for (let i = 0; i < 180; i++) {
@@ -203,6 +209,8 @@ class AutomationService {
                             } else {
                                 await this.sleep(2000);
                             }
+                        } else {
+                            this.log(`Đã nạp ${this.localQueue.length} jobs mới từ các file.`);
                         }
                     } catch (e) {
                         this.log(`Lỗi quét thư mục: ${e.message}`);
@@ -216,8 +224,8 @@ class AutomationService {
     async dispatchJob(worker, queueItem) {
         const { fileName, filePath, rowIndex, sheetName, jobData } = queueItem;
 
-        // 1. Lock / Mark Processing in Excel IMMEDIATELY
-        this.updateExcelStatus(filePath, sheetName, rowIndex, 'Processing');
+        // 1. Lock / Mark Processing in Excel IMMEDIATELY via async Queue
+        await this.queueExcelUpdate(filePath, sheetName, rowIndex, 'Processing');
         this.io.emit('job-update', { ...jobData, STATUS: 'Processing' }); // UI Update
 
         this.log(`Dispatching Job ${jobData.JOB_ID} to Worker ${worker.id}`);
@@ -231,7 +239,7 @@ class AutomationService {
             await worker.processJob(jobData, jobOutputDir);
 
             // Success
-            this.updateExcelStatus(filePath, sheetName, rowIndex, 'Completed');
+            await this.queueExcelUpdate(filePath, sheetName, rowIndex, 'Completed');
             this.io.emit('job-update', { ...jobData, STATUS: 'Completed' });
 
         } catch (e) {
@@ -239,7 +247,7 @@ class AutomationService {
             const newRetry = (jobData.RETRY_COUNT || 0) + 1;
             const newStatus = newRetry >= 3 ? 'Failed' : 'Pending Retry';
 
-            this.updateExcelStatus(filePath, sheetName, rowIndex, newStatus, newRetry);
+            await this.queueExcelUpdate(filePath, sheetName, rowIndex, newStatus, newRetry);
             this.io.emit('job-update', { ...jobData, STATUS: newStatus, RETRY_COUNT: newRetry });
 
             // Ensure worker is marked not busy even on crash
@@ -256,24 +264,49 @@ class AutomationService {
         }
     }
 
-    updateExcelStatus(filePath, sheetName, rowIndex, status, retryCount = null) {
-        try {
-            const workbook = xlsx.readFile(filePath);
-            const worksheet = workbook.Sheets[sheetName];
-            const data = xlsx.utils.sheet_to_json(worksheet, { defval: "" });
+    // Queue all excel I/O to avoid EBUSY data races when 20+ threads finish roughly at the same time
+    async queueExcelUpdate(filePath, sheetName, rowIndex, status, retryCount = null) {
+        return new Promise((resolve) => {
+            this.excelUpdateQueue.push({ filePath, sheetName, rowIndex, status, retryCount, resolve });
+            this.processExcelQueue();
+        });
+    }
 
-            if (data[rowIndex]) {
-                data[rowIndex]['STATUS'] = status;
-                if (retryCount !== null) data[rowIndex]['RETRY_COUNT'] = retryCount;
+    async processExcelQueue() {
+        if (this.isUpdatingExcel) return;
+        this.isUpdatingExcel = true;
 
-                const newWs = xlsx.utils.json_to_sheet(data);
-                const newWb = xlsx.utils.book_new();
-                xlsx.utils.book_append_sheet(newWb, newWs, sheetName);
-                xlsx.writeFile(newWb, filePath);
+        while (this.excelUpdateQueue.length > 0) {
+            const task = this.excelUpdateQueue.shift();
+            let success = false;
+            let attempts = 0;
+
+            while (!success && attempts < 5) {
+                try {
+                    const workbook = xlsx.readFile(task.filePath);
+                    const worksheet = workbook.Sheets[task.sheetName];
+                    const data = xlsx.utils.sheet_to_json(worksheet, { defval: "" });
+
+                    if (data[task.rowIndex]) {
+                        data[task.rowIndex]['STATUS'] = task.status;
+                        if (task.retryCount !== null) data[task.rowIndex]['RETRY_COUNT'] = task.retryCount;
+
+                        const newWs = xlsx.utils.json_to_sheet(data);
+                        const newWb = xlsx.utils.book_new();
+                        xlsx.utils.book_append_sheet(newWb, newWs, task.sheetName);
+                        xlsx.writeFile(newWb, task.filePath);
+                    }
+                    success = true;
+                } catch (e) {
+                    attempts++;
+                    this.log(`[Excel] Lỗi khóa file ${path.basename(task.filePath)} (thử lại ${attempts}/5)...`);
+                    await this.sleep(300);
+                }
             }
-        } catch (e) {
-            this.log(`Error updating Excel: ${e.message}`);
+            if (task.resolve) task.resolve();
         }
+
+        this.isUpdatingExcel = false;
     }
 
     async sleep(ms) {

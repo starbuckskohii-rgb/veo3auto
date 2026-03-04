@@ -1,0 +1,116 @@
+{
+   "action": {
+      "default_icon": {
+         "16": "app/assets/bg-icon/bg-favicon-16x16.png",
+         "200": "app/assets/bg-icon/bg-favicon-200x200.png",
+         "256": "app/assets/bg-icon/bg-favicon-256x256.png",
+         "32": "app/assets/bg-icon/bg-favicon-32x32.png",
+         "48": "app/assets/bg-icon/bg-favicon-48x48.png",
+         "512": "app/assets/bg-icon/bg-favicon-512x512.png",
+         "64": "app/assets/bg-icon/bg-favicon-64x64.png",
+         "96": "app/assets/bg-icon/bg-favicon-96x96.png"
+      },
+      "default_popup": "app/popup/index.html",
+      "default_title": "Malwarebytes"
+   },
+   "author": "Malwarebytes",
+   "background": {
+      "service_worker": "background.js"
+   },
+   "content_scripts": [ {
+      "js": [ "content-debugging.js" ],
+      "matches": [ "https://browserguard.local/*" ],
+      "run_at": "document_start"
+   }, {
+      "all_frames": true,
+      "js": [ "content-scripts.js" ],
+      "match_about_blank": true,
+      "matches": [ "http://*/*", "https://*/*" ],
+      "run_at": "document_start"
+   }, {
+      "js": [ "content-oap-notification.js" ],
+      "matches": [ "https://myaccount.google.com/*" ],
+      "run_at": "document_idle"
+   }, {
+      "js": [ "content-linkedin.js" ],
+      "matches": [ "https://www.linkedin.com/*" ],
+      "run_at": "document_idle"
+   }, {
+      "all_frames": true,
+      "js": [ "injection-tss-mv3.js" ],
+      "match_about_blank": true,
+      "matches": [ "http://*/*", "https://*/*" ],
+      "run_at": "document_start",
+      "world": "MAIN"
+   } ],
+   "content_security_policy": {
+      "extension_pages": "default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self'; frame-ancestors 'none'; frame-src 'none'; worker-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' *;"
+   },
+   "declarative_net_request": {
+      "rule_resources": [ {
+         "enabled": true,
+         "id": "mbgc.mv3.whitelist_1",
+         "path": "db/mbgc.mv3.whitelist_1.json"
+      }, {
+         "enabled": true,
+         "id": "mbgc.mv3.ads_1",
+         "path": "db/mbgc.mv3.ads_1.json"
+      }, {
+         "enabled": true,
+         "id": "mbgc.mv3.ads_2",
+         "path": "db/mbgc.mv3.ads_2.json"
+      }, {
+         "enabled": true,
+         "id": "mbgc.mv3.malware_1",
+         "path": "db/mbgc.mv3.malware_1.json"
+      }, {
+         "enabled": true,
+         "id": "mbgc.mv3.easylist_1",
+         "path": "db/mbgc.mv3.easylist_1.json"
+      }, {
+         "enabled": true,
+         "id": "mbgc.mv3.easyprivacy_1",
+         "path": "db/mbgc.mv3.easyprivacy_1.json"
+      }, {
+         "enabled": true,
+         "id": "mbgc.arw",
+         "path": "db/mbgc.arw.json"
+      }, {
+         "enabled": true,
+         "id": "mbgc.mv3.always_allow_DNR",
+         "path": "db/mbgc.mv3.always_allow_DNR.json"
+      } ]
+   },
+   "default_locale": "en",
+   "description": "__MSG_appDesc__",
+   "externally_connectable": {
+      "matches": [ "*://*.malwarebytes.com/*" ]
+   },
+   "host_permissions": [ "\u003Call_urls>" ],
+   "icons": {
+      "16": "app/assets/bg-icon/bg-favicon-16x16.png",
+      "200": "app/assets/bg-icon/bg-favicon-200x200.png",
+      "256": "app/assets/bg-icon/bg-favicon-256x256.png",
+      "32": "app/assets/bg-icon/bg-favicon-32x32.png",
+      "48": "app/assets/bg-icon/bg-favicon-48x48.png",
+      "512": "app/assets/bg-icon/bg-favicon-512x512.png",
+      "64": "app/assets/bg-icon/bg-favicon-64x64.png",
+      "96": "app/assets/bg-icon/bg-favicon-96x96.png"
+   },
+   "incognito": "split",
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAstqPfCrQgLp53qDXLQtMggrVty6XAvd8C6ys0fdC//FcO+Hi3H29vnYu7ijsPIUi2AMdhoYVaOzS0gHzZ5e3umGBB3AzEq8X8uiCMC/p7ksK4aAZJZR6ehqbgc68UEUMti/hq5KdsayoQAypNmlL7VgSu07zJe9oaQOiSHiHpuZ1ujOy8TZK7vsNrYLDmIHOR8qmZRfqFS431r0HXlTPqe9o6NcCUA3Dw9ILp9fBg3ocA3LW8bEy3ay/wLHRjiCWSH8Y9p2TPCVSfhuIJMVZr3nesMCKahoLy1imV+bHz8FS2Gt6qqnE71PuVwnkBXWfbpn7TMrHn3XLE5BjcT5avQIDAQAB",
+   "manifest_version": 3,
+   "name": "Malwarebytes Browser Guard",
+   "optional_permissions": [ "clipboardRead", "clipboardWrite" ],
+   "permissions": [ "alarms", "downloads", "nativeMessaging", "storage", "tabs", "webRequest", "declarativeNetRequest", "declarativeNetRequestFeedback", "unlimitedStorage", "contextMenus", "offscreen", "activeTab", "scripting" ],
+   "update_url": "https://edge.microsoft.com/extensionwebstorebase/v1/crx",
+   "version": "3.1.3",
+   "web_accessible_resources": [ {
+      "matches": [ "\u003Call_urls>" ],
+      "resources": [ "*.eot", "*.ttf", "*.woff", "*.woff2", "app/popup/assets/icons/*" ]
+   }, {
+      "matches": [ "\u003Call_urls>" ],
+      "resources": [ "app/assets/close-icon.svg", "app/assets/tooltip.svg", "app/eventpages/debugger.html", "app/eventpages/downloading.html", "app/eventpages/block-notification.html", "app/eventpages/breach-notification.html", "app/eventpages/block-notification.css", "app/eventpages/block-notification-dark.css", "app/eventpages/breach-notification.css", "app/eventpages/breach-notification-dark.css", "app/eventpages/monthly-notification.html", "app/eventpages/monthly-notification.css", "app/eventpages/monthly-notification-dark.css", "app/assets/check-icon.svg", "app/assets/check-icon-dark.svg", "app/eventpages/release-notification.html", "app/eventpages/release-notification.css", "app/eventpages/release-notification-dark.css", "app/eventpages/clipboard-notification.html", "app/eventpages/clipboard-notification.css", "app/eventpages/clipboard-notification-dark.css", "app/eventpages/search-hijacking-notification.html", "app/eventpages/search-hijacking-notification.css", "app/eventpages/search-hijacking-notification-dark.css", "app/eventpages/ruleset-error.html", "injection-instart.js", "injection-tss-mv3.js", "injection-tss-notification.js", "injection-topics.js", "injection-tss-skimmer.js", "vendor/*", "app/content-style.css", "app/popup/index.html", "app/popup/popup.css" ],
+      "use_dynamic_url": false
+   } ]
+}

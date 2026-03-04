@@ -1,0 +1,5 @@
+2026/02/27-15:50:42.926 e94c Creating DB d:\veo3auto\temp_edge_flags_prefs\Default\EdgeCoupons/coupons_data.db since it was missing.
+2026/02/27-15:50:42.930 e94c Reusing MANIFEST d:\veo3auto\temp_edge_flags_prefs\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/02/27-15:50:43.080 efb0 Level-0 table #5: started
+2026/02/27-15:50:43.085 efb0 Level-0 table #5: 681585 bytes OK
+2026/02/27-15:50:43.087 efb0 Delete type=0 #3

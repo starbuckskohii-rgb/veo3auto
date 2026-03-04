@@ -1,6 +1,6 @@
 {
   "name": "veo3auto",
-  "version": "1.0.24",
+  "version": "1.0.47",
   "description": "Veo3 Automation Desktop App",
   "main": "main.js",
   "author": "Veo3 Team",
@@ -17,11 +17,13 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "artifactName": "Veo3.Auto.Setup.${version}.${ext}"
     },
     "files": [
       "**/*",
       "!dist/**/*",
+      "!user_data/**/*",
       "!node_modules/puppeteer/.local-chromium/**/*"
     ],
     "asar": true,
@@ -42,11 +44,14 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "clipboardy": "^2.3.0",
     "cors": "^2.8.6",
-    "dotenv": "^17.2.4",
+    "dotenv": "^17.3.1",
     "electron-updater": "^6.8.3",
     "express": "^5.2.1",
     "open": "^11.0.0",
+    "otpauth": "^9.5.0",
+    "otplib": "^13.3.0",
     "puppeteer": "^24.37.2",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",

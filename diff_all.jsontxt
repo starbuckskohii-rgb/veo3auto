@@ -1,0 +1,24 @@
+DIFF:
+browser.window_placement.maximized : false => true
+browser.window_placement.work_area_bottom : 1036 => 1032
+browser.window_placement.work_area_left : -1920 => 0
+browser.window_placement.work_area_right : 0 => 1920
+browser.window_placement.work_area_top : 4 => 0
+browser_content_container_height : 0 => 951
+browser_content_container_width : 0 => 1920
+edge.services.signin_scoped_device_id : "d58d5c8a-3dde-4743-bb51-51c472ffbfd3" => "7682ec37-87e9-412c-b92c-e2ce0b7e680d"
+edge.msa_sso_info : undefined => {"allow_for_non_msa_profile":true}
+edge.profile_sso_info : undefined => {"aad_sso_algo_state":1,"is_first_profile":true,"is_msa_first_profile":true,"msa_sso_algo_state":1}
+edge_rewards.refresh_status_muted_until : "13417251559694448" => "13417252871793406"
+edge_ux_config.latestcorrelationid : "Ref A: E69F6EA92470410688D033B7FDF9F1DD Ref B: SGN30EDGE0106 Ref C: 2026-02-27T06:19:20Z" => "Ref A: D29B6E6C41934335885BCB78F2E62995 Ref B: SGN30EDGE0120 Ref C: 2026-02-27T06:41:12Z"
+edge_wallet.passwords.password_lost_report_date : "13416646789704883" => "13416648101807163"
+enterprise_profile_guid : "bac0ef32-059f-4f80-8397-5308e6558c44" => "6004cd94-5df2-4558-9f55-076b59e9a03b"
+muid.last_sync : "13416646760103620" => "13416648072201531"
+profile.content_settings.exceptions.site_engagement.edge://settings/,* : undefined => {"last_modified":"13416648127875227","setting":{"lastEngagementTime":13416648127875210,"lastShortcutLaunchTime":0,"pointsAddedToday":3.6,"rawScore":3.6}}
+profile.default_content_setting_values.geolocation : undefined => 1
+profile.edge_profile_id : "4f364f56-515b-4b3a-b2c7-06d2f4796bab" => "707849bb-ae8e-4eac-b90c-d9b727d0d8b3"
+profile.cookie_controls_mode : undefined => 1
+sessions.event_log : [{"crashed":false,"time":"13416646759701635","type":0},{"did_schedule_command":true,"first_session_service":true,"tab_count":1,"time":"13416646850248347","type":2,"window_count":1}] => [{"crashed":false,"time":"13416648071800698","type":0},{"did_schedule_command":true,"first_session_service":true,"tab_count":1,"time":"13416648138723269","type":2,"window_count":1}]
+enhanced_tracking_prevention : undefined => {"enabled":false}
+import_items_failure_state : undefined => {"reimport":{"ie_react":62436}}
+typosquatting : undefined => {"allowlist_migration_done":true}

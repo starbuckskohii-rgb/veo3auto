@@ -10,7 +10,8 @@ function createWindow() {
         icon: path.join(__dirname, 'public/favicon.ico'),
         webPreferences: {
             nodeIntegration: false,
-            contextIsolation: true
+            contextIsolation: true,
+            backgroundThrottling: false
         },
         autoHideMenuBar: true
     });
