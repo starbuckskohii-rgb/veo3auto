@@ -805,59 +805,62 @@ class AutomationWorker {
         // Fallback to UI clicks
         this.log('Chuyển sang luồng giả lập click nút (+)...');
 
-        // Tìm nút +
+        // Tìm nút + đính kèm ảnh bằng cách khoanh vùng ô nhập lệnh (Editor)
         let plusBtnCoords = await page.evaluate(() => {
-            const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
-            const attachBtn = btns.find(b => {
-                const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-                const hasPlusSvg = b.querySelector('svg path[d*="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"]'); // generic + path
-                const hasGoogleIconPlus = Array.from(b.querySelectorAll('i, span, div.google-symbols')).some(el => {
-                    const txt = el.textContent.trim();
-                    return txt === 'add' || txt === 'attach_file';
-                });
+            const getCenter = (el) => {
+                const r = el.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+                return null;
+            };
 
-                const isMatch = aria.includes('tải lên') || aria.includes('upload') || aria.includes('đính kèm') || aria.includes('attach') || hasPlusSvg || hasGoogleIconPlus;
+            // Ưu tiên 1: Tìm vùng nhập lệnh (Prompt Editor)
+            const editor = document.querySelector('.ql-editor, [data-slate-editor="true"], textarea, [contenteditable="true"]');
+            if (editor) {
+                // Đi ngược lên DOM tree để lấy nguyên block giao diện của Editor
+                const container = editor.closest('form, div[role="search"], [class*="chat"], [class*="input"], [class*="bottom"], div[style*="border-radius"]') || editor.parentElement.parentElement.parentElement;
+
+                if (container) {
+                    const btns = Array.from(container.querySelectorAll('button, [role="button"]'));
+
+                    // Tìm nút tải lên/đính kèm
+                    const explicitBtn = btns.find(b => {
+                        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+                        return aria.includes('tải lên') || aria.includes('upload') || aria.includes('đính kèm') || aria.includes('attach');
+                    });
+                    if (explicitBtn) return getCenter(explicitBtn);
+
+                    // Tìm nút có icon +
+                    const iconBtn = btns.find(b => {
+                        const hasPlusSvg = b.querySelector('svg path[d*="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"]');
+                        const hasGoogleIconPlus = Array.from(b.querySelectorAll('i, span, div.google-symbols')).some(el => {
+                            const txt = el.textContent.trim();
+                            return txt === 'add' || txt === 'attach_file';
+                        });
+                        return hasPlusSvg || hasGoogleIconPlus;
+                    });
+                    if (iconBtn) return getCenter(iconBtn);
+
+                    // Trả về nút icon đầu tiên trong thanh công cụ
+                    const firstBtn = btns.find(b => getCenter(b) !== null);
+                    if (firstBtn) return getCenter(firstBtn);
+                }
+            }
+
+            // Ưu tiên 2: Fallback tìm kiếm toàn bộ màn hình nếu không thấy Editor
+            const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+            const attachBtn = allBtns.find(b => {
+                const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+                const isMatch = aria.includes('tải lên') || aria.includes('upload') || aria.includes('đính kèm') || aria.includes('attach');
                 if (!isMatch) return false;
 
-                // Lọc để TRÁNH nút + ở góc trên cùng bên phải màn hình (New Project)
-                // Nút upload ảnh của Editor chát luôn nằm nửa dưới màn hình và ở khu vực TRUNG TÂM HOẶC BÊN TRÁI.
                 const r = b.getBoundingClientRect();
-                const isOnScreenBottom = r.y > (window.innerHeight / 2);
-                const isNotFarRight = r.x < (window.innerWidth - 300); // Ngăn không bấm nhầm vào các widget góc phải tít tắp (như X = 1371)
-
-                return isOnScreenBottom && isNotFarRight;
+                const isOnScreenBottom = r.y > (window.innerHeight - 300); // Ép sát đáy màn hình để tránh lọt nút ở dải History (y = 1010 có thể là dải giữa của màn 4K)
+                return isOnScreenBottom;
             });
 
-            if (attachBtn) {
-                const r = attachBtn.getBoundingClientRect();
-                if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-            }
+            if (attachBtn) return getCenter(attachBtn);
             return null;
         });
-
-        if (!plusBtnCoords) {
-            // Try aggressive search for anything looking like an add attachment near the editor
-            plusBtnCoords = await page.evaluate(() => {
-                const editor = document.querySelector('[data-slate-editor="true"][role="textbox"]');
-                if (!editor) return null;
-                const container = editor.closest('div[style*="border-radius"]') || editor.parentElement.parentElement;
-                if (!container) return null;
-
-                const buttons = Array.from(container.querySelectorAll('button, [role="button"]'));
-                if (buttons.length > 0) {
-                    // Usually the attach button is the first icon button on the left
-                    const r = Array.from(buttons).find(b => {
-                        const r2 = b.getBoundingClientRect();
-                        return r2.width > 0 && r2.height > 0;
-                    });
-                    if (r) {
-                        const rect = r.getBoundingClientRect();
-                        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-                    }
-                }
-                return null;
-            });
-        }
 
         if (plusBtnCoords) {
             this.log(`Tìm thấy nút Thêm (+). Đang click tại tọa độ ${plusBtnCoords.x}, ${plusBtnCoords.y}`);
@@ -1675,6 +1678,67 @@ class AutomationWorker {
                 } else if (hasZodOr429Error) {
                     currentErrorReason = zodOr429Reason;
                     hasError = true;
+                }
+
+                // --- NEW ROUND 6 LOGIC: SOFT RETRY FOR VALIDATION ERRORS ---
+                if (hasError && (currentErrorReason === 'global_dialog_error' || currentErrorReason === 'validation_error')) {
+                    this.log(`⚠️ Phát hiện Video lỗi (Không thành công / Vi phạm). Đang tìm nút Thử Lại (Refresh) màu xám để chạy lại In-Place...`);
+
+                    const clickedRetry = await page.evaluate(() => {
+                        // Nút Thử Lại là nút đầu tiên trong cụm 3 icon button (Refresh, Undo, Delete) ở cuối màn hình lịch sử
+                        const isVisible = (el) => el.offsetParent !== null;
+                        const buttonContainers = Array.from(document.querySelectorAll('div')).filter(container => {
+                            if (!isVisible(container)) return false;
+                            const rect = container.getBoundingClientRect();
+                            if (rect.height > 100 || rect.width > 400 || rect.width < 50) return false;
+                            if (rect.y > window.innerHeight - 250) return false; // Ignore Text Editor box
+
+                            const btns = Array.from(container.querySelectorAll('button, [role="button"]')).filter(b => isVisible(b) && b.querySelector('svg'));
+                            return btns.length === 3; // Lỗi card always has exactly 3 action buttons
+                        });
+
+                        if (buttonContainers.length > 0) {
+                            // Lấy cụm nút mới nhất (nằm ở vị trí Y thấp nhất hoặc cuối DOM tree hợp lệ)
+                            // Thường cái thông báo lỗi mới tinh nó nằm tít dưới đáy mảng
+                            const targetContainer = buttonContainers[buttonContainers.length - 1];
+                            const retryBtn = Array.from(targetContainer.querySelectorAll('button, [role="button"]'))[0];
+                            if (retryBtn) {
+                                retryBtn.click();
+                                return true;
+                            }
+                        }
+
+                        // Fallback: Tìm mù quáng các nút có SVG hình mũi tên ngoáy tròn (Refresh path)
+                        const refreshBtns = Array.from(document.querySelectorAll('button, [role="button"]')).filter(b => {
+                            if (!isVisible(b)) return false;
+
+                            // Check aria
+                            const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+                            if (aria.includes('thử lại') || aria.includes('retry') || aria.includes('regenerate')) return true;
+
+                            // Check SVG Path cho nút Refresh/Sync
+                            const hasRefreshSvg = b.querySelector('svg path[d*="12 4V1L8 5l4 4V6c3.31"]'); // Common material refresh path
+                            return !!hasRefreshSvg;
+                        });
+
+                        if (refreshBtns.length > 0) {
+                            refreshBtns[refreshBtns.length - 1].click(); // Click nút dưới cùng
+                            return true;
+                        }
+
+                        return false;
+                    });
+
+                    if (clickedRetry) {
+                        this.log(`✅ Đã ấn nút "Thử Lại" trên Card Lỗi thành công. Đặt lại đồng hồ đếm ngược 90s...`);
+                        await this.sleep(3000); // Đợi mạng gửi lệnh
+                        hasError = false;
+                        currentErrorReason = '';
+                        i = 0; // Reset vòng lặp siêu to khổng lồ
+                        continue; // Tiếp tục quay lại đầu vòng lặp quét Render
+                    } else {
+                        this.log(`❌ Không thể tìm thấy nút "Thử Lại" trên giao diện lỗi. Bắt buộc kết thúc Job...`);
+                    }
                 }
 
                 if (hasError) {

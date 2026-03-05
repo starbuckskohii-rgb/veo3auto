@@ -1,12 +1,12 @@
 :root {
-    --bg-color: #f8fafc;
-    --text-primary: #1e293b;
-    --text-secondary: #64748b;
-    --accent-color: #2563eb;
-    --success-color: #059669;
-    --danger-color: #dc2626;
-    --warning-color: #d97706;
-    --glass-bg: rgba(255, 255, 255, 0.85);
+    --bg-color: #fafafa;
+    --text-primary: #111111;
+    --text-secondary: #666666;
+    --accent-color: #000000;
+    --success-color: #0070f3;
+    --danger-color: #e00000;
+    --warning-color: #f5a623;
+    --glass-bg: #ffffff;
     --glass-border: rgba(0, 0, 0, 0.08);
 }
 
@@ -53,10 +53,8 @@ body {
 
 .logo h2 {
     font-weight: 600;
-    background: linear-gradient(to right, #60a5fa, #34d399);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
 }
 
 .control-group label {
@@ -125,12 +123,11 @@ input[type="text"]:focus {
     border: none;
     width: 100%;
     padding: 14px;
-    border-radius: 14px;
-    font-weight: 600;
+    border-radius: 8px;
+    font-weight: 500;
     font-size: 0.95rem;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 4px 14px 0 rgba(37, 99, 235, 0.2);
 }
 
 .primary-btn:hover {
@@ -423,4 +420,310 @@ td {
 .small-btn:hover {
     background: #f8fafc;
     border-color: #cbd5e1;
+}
+
+/* Modal Table Pro-Max UI */
+.modal-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.85rem;
+    margin-top: 8px;
+}
+
+.modal-table th {
+    background: rgba(0, 0, 0, 0.03);
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-bottom: 2px solid var(--glass-border);
+}
+
+.modal-table td {
+    padding: 12px;
+    border-bottom: 1px solid var(--glass-border);
+    vertical-align: middle;
+}
+
+.modal-table tr:hover td {
+    background: rgba(37, 99, 235, 0.02);
+}
+
+/* Status Badges */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    border: 1px solid transparent;
+}
+
+.badge-ok {
+    background: #ecfdf5;
+    color: #059669;
+    border-color: #a7f3d0;
+}
+
+.badge-ok::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #10b981;
+}
+
+.badge-expired {
+    background: #fffbeb;
+    color: #d97706;
+    border-color: #fde68a;
+}
+
+.badge-expired::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #f59e0b;
+}
+
+.badge-error {
+    background: #fef2f2;
+    color: #dc2626;
+    border-color: #fecaca;
+}
+
+.badge-error::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #ef4444;
+}
+
+.badge-unassigned {
+    background: #f4f4f5;
+    color: #52525b;
+    border-color: #e4e4e7;
+}
+
+.badge-unassigned::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #a1a1aa;
+}
+
+/* Icon buttons inside tables */
+.action-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 4px;
+    border-radius: 6px;
+    transition: background 0.2s;
+}
+
+.action-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+/* Radio Group UI */
+.radio-group {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.02);
+    border-radius: 8px;
+    border: 1px solid var(--glass-border);
+}
+
+.radio-group label {
+    margin: 0 !important;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    color: var(--text-primary);
+}
+
+/* Accordion UI */
+.accordion-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.accordion-item {
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    background: white;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.accordion-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    cursor: pointer;
+    background: rgba(0, 0, 0, 0.01);
+    transition: background 0.2s;
+}
+
+.accordion-header:hover {
+    background: rgba(37, 99, 235, 0.03);
+}
+
+.accordion-title {
+    font-weight: 500;
+    color: var(--accent-color);
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.accordion-body {
+    padding: 0 16px;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    border-top: 1px solid transparent;
+    background: rgba(250, 250, 250, 0.5);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.accordion-item.active .accordion-body {
+    max-height: 100px;
+    /* enough for 1 single row of details */
+    padding: 12px 16px;
+    opacity: 1;
+    border-top-color: var(--glass-border);
+}
+
+.accordion-details {
+    display: flex;
+    gap: 20px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.accordion-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* Vercel Style Buttons */
+.vercel-btn {
+    background: #000;
+    color: #fff;
+    border: 1px solid #000;
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.vercel-btn:hover {
+    background: #fff;
+    color: #000;
+}
+
+.vercel-btn-outline {
+    background: #fff;
+    color: #000;
+    border: 1px solid var(--glass-border);
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.vercel-btn-outline:hover {
+    border-color: #000;
+}
+
+/* Custom Pro-Max Toggle Switch UI */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+    flex-shrink: 0;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #e2e8f0;
+    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15), 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+input:checked+.slider {
+    background-color: #10b981;
+}
+
+input:checked+.slider:before {
+    transform: translateX(18px);
+}
+
+.slider.round {
+    border-radius: 24px;
+}
+
+.slider.round:before {
+    border-radius: 50%;
 }

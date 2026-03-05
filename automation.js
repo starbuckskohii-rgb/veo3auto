@@ -4,15 +4,20 @@ const xlsx = require('xlsx');
 const AutomationWorker = require('./worker');
 
 class AutomationService {
-    constructor(io, inputFolder, workerCount = 1, browserType = 'edge', settings = {}) {
+    constructor(io, inputFolder, workerCount, accountManager, proxyManager, mapping = {}, browserType = 'edge', settings = {}) {
         this.io = io;
         this.inputFolder = inputFolder;
         this.outputDir = path.join(inputFolder, 'Output');
+        this.accountManager = accountManager;
+        this.proxyManager = proxyManager;
+        this.mapping = mapping;
         this.workerCount = workerCount;
         this.browserType = browserType;
         this.settings = settings;
+        this.accountCookieCache = {}; // Cache cookies per accountId to inject into temp profiles
         this.workers = [];
         this.isRunning = false;
+        this.isPaused = false; // Add global pause state
 
         // Queue State
         this.files = [];
@@ -26,6 +31,18 @@ class AutomationService {
         // Excel File I/O Queue setup for concurrent workers (20 threaded)
         this.excelUpdateQueue = [];
         this.isUpdatingExcel = false;
+
+        // Long Sleep Mechanics
+        this.sessionStartTime = Date.now();
+        this.longSleepCount = 0;
+        this.isLongSleeping = false;
+        // First long sleep is scheduled 1 hour after start
+        this.nextLongSleepTime = this.sessionStartTime + 60 * 60 * 1000;
+
+        // Global Lock for Submit Button (Rate Limiting)
+        this.lastSubmitTime = 0;
+        this.lastLaunchTime = 0;
+        this.firstSubmitOccurred = false;
     }
 
     log(message) {
@@ -36,13 +53,48 @@ class AutomationService {
     async start() {
         if (this.isRunning) return;
         this.isRunning = true;
+        this.isPaused = false;
         this.log(`Starting Master Service with ${this.workerCount} workers...`);
 
-        // Initialize Workers
+        // Get Live Proxies
+        let liveProxies = [];
+        if (this.proxyManager && this.proxyManager.getProxies().length > 0) {
+            this.log(`Tự động kiểm tra (${this.proxyManager.getProxies().length}) Proxy hiện có trước khi cấp phát (Ping Check)...`);
+            await this.proxyManager.checkProxies(this.io);
+            liveProxies = this.proxyManager.getLiveProxies();
+            if (liveProxies.length > 0) {
+                this.log(`Dùng ${liveProxies.length} proxy sống để phân bổ cho các luồng.`);
+            } else {
+                this.log(`⚠️ Không có proxy sống nào. Tất cả đều chết, sẽ chạy trực tiếp bằng IP gốc.`);
+            }
+        }
+
+        // Initialize Workers from mapped accounts
         this.workers = [];
         for (let i = 1; i <= this.workerCount; i++) {
-            this.workers.push(new AutomationWorker(i, this.io, this.browserType));
+            const accountId = this.mapping[i];
+            let account = null;
+            if (accountId && this.accountManager && this.accountManager.getAccountById) {
+                account = this.accountManager.getAccountById(accountId);
+            }
+            if (!account) {
+                this.log(`⚠️ Luồng ${i} không được gán Account (Mapping ID: ${accountId})`);
+            }
+
+            // Assign proxy round-robin if available
+            let assignedProxy = null;
+            if (liveProxies.length > 0) {
+                assignedProxy = liveProxies[(i - 1) % liveProxies.length];
+                this.log(`Luồng ${i} được cấp proxy: ${assignedProxy.ip}:${assignedProxy.port}`);
+            }
+
+            this.workers.push(new AutomationWorker(i, account, this, this.io, this.browserType, assignedProxy));
         }
+
+        this.sessionStartTime = Date.now();
+        this.longSleepCount = 0;
+        this.isLongSleeping = false;
+        this.nextLongSleepTime = this.sessionStartTime + 60 * 60 * 1000;
 
         this.log('Waiting for jobs to process...');
         this.processQueue();
@@ -50,6 +102,7 @@ class AutomationService {
 
     async stop() {
         this.isRunning = false;
+        this.isPaused = false;
         this.log('Stopping...');
         for (const worker of this.workers) {
             await worker.close();
@@ -107,7 +160,7 @@ class AutomationService {
 
                             const jobID = row['JOB_ID'] || `JOB_${fileName}_${rIndex}`;
 
-                            if (!this.inProgressJobs.has(jobID)) {
+                            if (!this.inProgressJobs.has(jobID) && !this.localQueue.some(q => q.jobData.JOB_ID === jobID)) {
                                 this.localQueue.push({
                                     fileName: fileName,
                                     filePath: filePath,
@@ -120,6 +173,9 @@ class AutomationService {
                                         VIDEO_NAME: row['VIDEO_NAME'] || row['name'] || `video_${Date.now()}_${rIndex}`,
                                         TYPE_VIDEO: computedType,
                                         ORIGINAL_TYPE_VIDEO: typeVideo,
+                                        IMAGE_PATH: img1,
+                                        IMAGE_PATH_2: img2,
+                                        IMAGE_PATH_3: img3,
                                         settings: this.settings,
                                         RETRY_COUNT: retryCount
                                     }
@@ -169,11 +225,47 @@ class AutomationService {
                 await this.scanAllFiles();
             }
 
+            // Check if it's time for a Long Sleep
+            if (now > this.nextLongSleepTime) {
+                this.isLongSleeping = true;
+                this.log(`⚠️ Tới giờ nghỉ định kỳ (Long Sleep). Đang chờ các luồng hiện tại hoàn thành việc lưu video...`);
+
+                // Wait until all in-progress jobs finish
+                while (this.inProgressJobs.size > 0) {
+                    if (!this.isRunning) break;
+                    await this.sleep(2000);
+                }
+
+                if (this.isRunning) {
+                    this.longSleepCount++;
+                    // Sleep duration: 5 mins, 10 mins, 15 mins...
+                    const sleepMins = this.longSleepCount * 5;
+                    this.log(`💤 [LONG SLEEP] Hệ thống bắt đầu nghỉ ${sleepMins} phút để giảm thiểu rủi ro bị block IP...`);
+
+                    for (let i = 0; i < sleepMins * 60; i++) {
+                        if (!this.isRunning) break;
+                        await this.sleep(1000);
+                    }
+
+                    this.log(`✅ [LONG SLEEP] Hoàn thành thời gian nghỉ. Tiếp tục công việc!`);
+                }
+
+                this.isLongSleeping = false;
+                this.nextLongSleepTime = Date.now() + 60 * 60 * 1000; // Reset next break to 1 hour from NOW
+            }
+
+            if (this.isLongSleeping) {
+                await this.sleep(2000);
+                continue;
+            }
+
             if (this.localQueue.length > 0) {
                 // Find idle worker that is NOT offline
                 const idleWorker = this.workers.find(w => !w.isBusy && !w.isOffline);
 
                 if (idleWorker) {
+                    idleWorker.isBusy = true; // Fix race condition: mark busy synchronously before any async tasks
+
                     // Get next job
                     const queueItem = this.localQueue.shift();
                     if (!queueItem) continue;
@@ -250,9 +342,6 @@ class AutomationService {
             await this.queueExcelUpdate(filePath, sheetName, rowIndex, newStatus, newRetry);
             this.io.emit('job-update', { ...jobData, STATUS: newStatus, RETRY_COUNT: newRetry });
 
-            // Ensure worker is marked not busy even on crash
-            worker.isBusy = false;
-
             if (newStatus === 'Pending Retry') {
                 this.localQueue.push({
                     ...queueItem,
@@ -261,6 +350,14 @@ class AutomationService {
             }
         } finally {
             this.inProgressJobs.delete(jobData.JOB_ID);
+
+            // Random delay between 5s to 30s after every job finishing BEFORE accepting next job
+            if (this.isRunning && worker) {
+                const randomDelay = Math.floor(Math.random() * (30000 - 5000 + 1)) + 5000;
+                this.log(`[Worker ${worker.id}] Job hoàn tất (STATUS: ${jobData.STATUS || 'Completed/Failed'}). Nghỉ ngắn ngẫu nhiên ${Math.round(randomDelay / 1000)}s trước khi nhận Job mới...`);
+                await this.sleep(randomDelay);
+                worker.isBusy = false;
+            }
         }
     }
 
@@ -270,6 +367,71 @@ class AutomationService {
             this.excelUpdateQueue.push({ filePath, sheetName, rowIndex, status, retryCount, resolve });
             this.processExcelQueue();
         });
+    }
+
+    async requestSubmitLock(workerId) {
+        // Enforce a strict but randomized delay between ANY worker clicking the Submit button
+        // to prevent API flooding and mimic human behavior to bypass anti-bot systems.
+        // Formula: Distribute N clicks evenly across an approximate 90s video generation window, plus randomness.
+        const N = this.workerCount > 0 ? this.workerCount : 1;
+
+        // Base gap between each thread's submit action
+        const baseWaitMs = Math.floor(90000 / N);
+
+        // Add ±30% randomness to seem human
+        const jitter = Math.floor((Math.random() * 0.6 - 0.3) * baseWaitMs);
+
+        // Ensure delay is at least 3 seconds (3000ms) to avoid spamming
+        const lockWaitMs = Math.max(3000, baseWaitMs + jitter);
+
+        if (!this.firstSubmitOccurred) {
+            this.firstSubmitOccurred = true;
+            this.lastSubmitTime = Date.now();
+            this.log(`[Submit Lock] Luồng ${workerId} là luồng đầu tiên. Được cấp quyền nhấn Create Video lập tức (Bỏ qua thời gian đợi).`);
+            return;
+        }
+
+        // Atomic assignment to prevent race conditions during async calculation
+        const now = Date.now();
+        if (this.lastSubmitTime < now) {
+            this.lastSubmitTime = now;
+        }
+
+        // Allocate the time slot for this worker
+        const assignedTime = this.lastSubmitTime + lockWaitMs;
+        this.lastSubmitTime = assignedTime; // Reserve it right now synchronously
+
+        const delayToWait = assignedTime - Date.now();
+
+        if (delayToWait > 0) {
+            this.log(`[Submit Lock] Luồng ${workerId} vào hàng đợi nhấn Create Video (Đợi ${Math.round(delayToWait / 1000)}s - Giãn cách động).`);
+
+            // Just sleep asynchronously, leaving the Event Loop free for other workers
+            await this.sleep(delayToWait);
+        } else {
+            this.log(`[Submit Lock] Luồng ${workerId} được cấp quyền nhấn Create Video lập tức.`);
+        }
+    }
+
+    async requestLaunchLock(workerId) {
+        // Enforce a strict randomized delay (3000ms base) between ANY worker launching a browser
+        const lockWaitMs = 3000 + Math.floor(Math.random() * 2000); // 3s - 5s
+
+        const now = Date.now();
+        if (this.lastLaunchTime < now) {
+            this.lastLaunchTime = now;
+        }
+
+        const assignedTime = this.lastLaunchTime + lockWaitMs;
+        this.lastLaunchTime = assignedTime;
+
+        const delayToWait = assignedTime - Date.now();
+
+        if (delayToWait > 0) {
+            await this.sleep(delayToWait);
+        }
+
+        this.log(`[Launch Lock] Luồng ${workerId} được phép khởi động trình duyệt.`);
     }
 
     async processExcelQueue() {
@@ -314,9 +476,15 @@ class AutomationService {
     }
 
     // Manual Profile Opener
-    async openProfile(id) {
-        this.log(`Opening Profile ${id} for manual login using ${this.browserType}...`);
-        const worker = new AutomationWorker(id, this.io, this.browserType);
+    async openProfile(accountId) {
+        this.log(`Opening Profile for account ${accountId} using ${this.browserType}...`);
+        let account = null;
+        if (this.accountManager && this.accountManager.getAccountById) {
+            account = this.accountManager.getAccountById(accountId);
+        }
+        if (!account) throw new Error("Account not found");
+
+        const worker = new AutomationWorker('TEMP', account, this, this.io, this.browserType);
         await worker.launch();
         return worker;
     }

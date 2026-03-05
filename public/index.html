@@ -15,11 +15,16 @@
 <body>
     <div class="app-container">
         <!-- Sidebar -->
-        <aside class="sidebar glass" style="display: flex; flex-direction: column; height: calc(100vh - 32px); gap: 0;">
+        <aside class="sidebar glass"
+            style="display: flex; flex-direction: column; height: calc(100vh - 32px); gap: 0; width: 380px; min-width: 380px;">
             <div class="logo"
                 style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 16px;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <h2 style="font-size: 1.5rem; margin: 0; white-space: nowrap; letter-spacing: -0.5px;">⚡ Veo3 Auto
+                    <h2
+                        style="font-size: 1.5rem; margin: 0; white-space: nowrap; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px;">
+                        <img src="logo.png" style="height: 32px; width: 32px; object-fit: contain; border-radius: 8px;"
+                            alt="Logo">
+                        Veo3 Auto
                     </h2>
                     <span id="appVersion"
                         style="font-size: 0.75rem; color: var(--accent-color); background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.2); padding: 4px 10px; border-radius: 12px; font-weight: 600;">v...</span>
@@ -47,81 +52,114 @@
                     <label>Browser Selection</label>
                     <select id="browserSelect" class="input-row"
                         style="width: 100%; padding: 10px; border-radius: 12px; border: 1px solid var(--glass-border); background: white; color: var(--text-primary); font-size: 0.9rem; cursor: pointer;">
-                        <option value="edge">Microsoft Edge (Recommended - AntiBot bypass)</option>
+                        <option value="brave">Brave (Recommended - Max AntiBot)</option>
+                        <option value="edge">Microsoft Edge (Standard Bypass)</option>
                         <option value="chrome">Chrome / Chromium (Legacy)</option>
                     </select>
                 </div>
-
-                <!-- Video Settings -->
+                <!-- Account Setup -->
                 <div class="control-group" style="border-top: 1px solid rgba(0,0,0,0.05); padding-top: 16px;">
-                    <label
-                        style="color: #3b82f6; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-                        🎬 Video Settings
-                    </label>
-                    <div class="settings-grid">
-                        <select id="videoRatio" class="small-select">
-                            <option value="16:9">Tỷ lệ 16:9</option>
-                            <option value="9:16">Tỷ lệ 9:16</option>
-                        </select>
-                        <select id="videoCount" class="small-select">
-                            <option value="1">1 Đầu ra</option>
-                            <option value="2">2 Đầu ra</option>
-                            <option value="3">3 Đầu ra</option>
-                            <option value="4">4 Đầu ra</option>
-                        </select>
-                        <select id="videoModel" class="small-select" style="grid-column: span 2;">
-                            <option value="Veo 3.1 - Fast">Veo 3.1 - Fast</option>
-                            <option value="Veo 3.1 - Fast [Lower Priority]">Veo 3.1 - Fast [Lower Priority]</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Image Settings -->
-                <div class="control-group" style="border-top: 1px solid rgba(0,0,0,0.05); padding-top: 16px;">
-                    <label
-                        style="color: #10b981; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-                        🖼️ Image Settings
-                    </label>
-                    <div class="settings-grid">
-                        <select id="imgRatio" class="small-select">
-                            <option value="16:9">Tỷ lệ 16:9</option>
-                            <option value="9:16">Tỷ lệ 9:16</option>
-                        </select>
-                        <select id="imgCount" class="small-select">
-                            <option value="1">1 Đầu ra</option>
-                            <option value="2">2 Đầu ra</option>
-                            <option value="3">3 Đầu ra</option>
-                            <option value="4">4 Đầu ra</option>
-                        </select>
-                        <select id="imgModel" class="small-select" style="grid-column: span 2;">
-                            <option value="Nano Banana Pro">Nano Banana Pro</option>
-                            <option value="nano banana 2">nano banana 2</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="control-group" style="border-top: 1px solid rgba(0,0,0,0.05); padding-top: 16px;">
-                    <label>Worker Threads</label>
-                    <div class="input-row" style="margin-bottom: 8px;">
-                        <input type="range" id="workerCount" min="1" max="20" value="1" step="1"
-                            style="flex: 1; accent-color: var(--accent-color);">
-                        <input type="number" id="workerCountInput" min="1" max="20" value="1"
-                            style="width: 60px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--glass-border); background: white; color: var(--text-primary); text-align: center; font-weight: 500;">
-                    </div>
-                </div>
-
-                <div class="control-group">
                     <div
-                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <label style="margin: 0;">Worker Management</label>
-                        <button id="btnToggleReset" class="icon-btn"
-                            style="height: 28px; padding: 0 10px; font-size: 0.8rem; background: rgba(239, 68, 68, 0.05); border-color: rgba(239, 68, 68, 0.2); color: var(--danger-color); border-radius: 8px; font-weight: 500;"
-                            title="Bật/Tắt chế độ Xóa Profile">🗑️ Xoá Data</button>
-                    </div>
-                    <div id="workerGrid" class="worker-grid">
-                        <!-- Worker buttons injected here dynamically -->
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px;">
+                        <label
+                            style="margin: 0; white-space: nowrap; font-weight: 500; color: var(--text-primary);">Quản
+                            lý Profile</label>
+                        <button id="btnManageProfiles" class="secondary-btn"
+                            style="padding: 6px 12px; font-size: 0.85rem; border-radius: 8px; width: auto; flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);"
+                            title="Thêm Profile và Gán Luồng">⚙️ Settings</button>
                     </div>
                 </div>
+
+                <!-- Proxy Setup -->
+                <div class="control-group" style="border-top: 1px solid rgba(0,0,0,0.05); padding-top: 16px;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px;">
+                        <label style="margin: 0; white-space: nowrap; font-weight: 500; color: var(--text-primary);">Cấu
+                            hình Proxy</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <label class="switch" title="Bật/tắt sử dụng Proxy cho công cụ" style="margin:0;">
+                                <input type="checkbox" id="useProxyToggle" aria-label="Bật proxy">
+                                <span class="slider round"></span>
+                            </label>
+                            <button id="btnManageProxies" class="secondary-btn"
+                                style="padding: 6px 12px; font-size: 0.85rem; border-radius: 8px; width: auto; color: #10b981; border-color: rgba(16, 185, 129, 0.2); background: rgba(16, 185, 129, 0.05); flex-shrink: 0;"
+                                title="Quản lý danh sách Proxy">🌐 Q.lý Proxy</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Worker Count -->
+                <div class="control-group" style="border-top: 1px solid rgba(0,0,0,0.05); padding-top: 16px;">
+                    <label style="font-weight: 500; color: var(--text-primary); margin-bottom: 8px; display: block;">Số
+                        luồng chạy (Worker Count)</label>
+                    <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+                        <input type="range" id="workerCount" min="1" max="20" value="1"
+                            style="flex: 1; accent-color: var(--text-primary);">
+                        <input type="number" id="workerCountInput" value="1" min="1" max="20"
+                            style="width: 60px; text-align: center; border-radius: 8px; border: 1px solid var(--glass-border); padding: 8px; background: #fafafa; outline: none; transition: border-color 0.2s;"
+                            class="input-row">
+                    </div>
+                </div>
+
+                <!-- Settings Tabs -->
+                <div class="control-group" style="border-top: 1px solid rgba(0,0,0,0.05); padding-top: 16px;">
+                    <div class="tabs-header"
+                        style="display: flex; gap: 8px; margin-bottom: 12px; background: rgba(0,0,0,0.03); padding: 4px; border-radius: 12px;">
+                        <button id="tabVideo" class="tab-btn active"
+                            style="flex: 1; padding: 8px; border-radius: 8px; border: none; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); font-weight: 600; color: #3b82f6; cursor: pointer;">🎬
+                            Video</button>
+                        <button id="tabImage" class="tab-btn"
+                            style="flex: 1; padding: 8px; border-radius: 8px; border: none; background: transparent; font-weight: 500; color: var(--text-secondary); cursor: pointer;">🖼️
+                            Ảnh</button>
+                    </div>
+
+                    <!-- Video Settings Content -->
+                    <div id="contentVideo" class="tab-content">
+                        <div class="settings-grid">
+                            <select id="videoRatio" class="small-select">
+                                <option value="16:9">Tỷ lệ 16:9</option>
+                                <option value="9:16">Tỷ lệ 9:16</option>
+                            </select>
+                            <select id="videoCount" class="small-select">
+                                <option value="1">1 Đầu ra</option>
+                                <option value="2">2 Đầu ra</option>
+                                <option value="3">3 Đầu ra</option>
+                                <option value="4">4 Đầu ra</option>
+                            </select>
+                            <select id="videoModel" class="small-select" style="grid-column: span 2;">
+                                <option value="Veo 3.1 - Fast [Lower Priority]" selected>Veo 3.1 - Fast [Lower Priority]
+                                </option>
+                                <option value="Veo 3.1 - Fast">Veo 3.1 - Fast</option>
+                            </select>
+                            <select id="videoResolution" class="small-select" style="grid-column: span 2;">
+                                <option value="720p" selected>Chất lượng 720p (Nhanh)</option>
+                                <option value="1080p">Chất lượng 1080p (Chờ Upscale 60s)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Image Settings Content -->
+                    <div id="contentImage" class="tab-content" style="display: none;">
+                        <div class="settings-grid">
+                            <select id="imgRatio" class="small-select">
+                                <option value="16:9">Tỷ lệ 16:9</option>
+                                <option value="9:16">Tỷ lệ 9:16</option>
+                            </select>
+                            <select id="imgCount" class="small-select">
+                                <option value="1">1 Đầu ra</option>
+                                <option value="2">2 Đầu ra</option>
+                                <option value="3">3 Đầu ra</option>
+                                <option value="4">4 Đầu ra</option>
+                            </select>
+                            <select id="imgModel" class="small-select" style="grid-column: span 2;">
+                                <option value="Nano Banana Pro">Nano Banana Pro</option>
+                                <option value="nano banana 2">nano banana 2</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Removed old Reset Profile button from Dashboard, moved to Account Management -->
 
                 <div class="control-group" style="margin-top: auto; padding-top: 8px;">
                     <button id="btnClearRetries" class="secondary-btn"
@@ -132,41 +170,198 @@
                 </div>
             </div>
 
-            <div class="actions" style="margin-top: 0;">
+            <div class="actions" style="margin-top: 0; display: flex; gap: 8px;">
                 <button id="btnStart" class="primary-btn"
-                    style="font-size: 1.05rem; padding: 16px; box-shadow: 0 6px 20px -4px rgba(37,99,235,0.4); display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.3s ease;">
+                    style="flex: 1; font-size: 1.05rem; padding: 16px; box-shadow: 0 6px 20px -4px rgba(37,99,235,0.4); display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.3s ease;">
                     <svg id="startIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polygon points="5 3 19 12 5 21 5 3"></polygon>
                     </svg>
                     <span id="startText">Start Automation</span>
                 </button>
+                <button id="btnPause" class="secondary-btn"
+                    style="display: none; background: #fb923c; color: white; border: none; padding: 16px;"
+                    title="Tạm dừng Tool">
+                    ⏸️ Pause
+                </button>
+            </div>
+
+            <div
+                style="text-align: center; margin-top: 16px; font-size: 0.75rem; color: var(--text-secondary); opacity: 0.7;">
+                © 2026 Crafted by <strong>Trọng</strong>. All rights reserved.
             </div>
         </aside>
 
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Stats Row -->
-            <div class="stats-row">
-                <div class="stat-card glass"
-                    style="border-bottom: 4px solid #3b82f6; box-shadow: 0 10px 15px -3px rgba(59,130,246,0.1);">
-                    <h3 style="display: flex; align-items: center; gap: 6px;"><span style="font-size: 1.1rem;">📊</span>
-                        Total Jobs</h3>
-                    <span id="statTotal" style="color: #3b82f6;">0</span>
+        <!-- Profile Management Modal -->
+        <div id="profileModal"
+            style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); backdrop-filter: blur(8px); z-index: 1000; justify-content: center; align-items: center;">
+            <div
+                style="background: var(--bg-color); padding: 32px; border-radius: 20px; width: 850px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; border: 1px solid var(--glass-border);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                    <h2 style="margin: 0; color: var(--text-primary); font-weight: 600; font-size: 1.5rem;">Cài đặt Hệ
+                        thống</h2>
+                    <button id="btnCloseModalTop" class="icon-btn"
+                        style="border: none; background: transparent; font-size: 1.2rem; cursor: pointer; color: var(--text-secondary);"
+                        onclick="document.getElementById('btnCloseModal').click()">✕</button>
                 </div>
-                <div class="stat-card glass"
-                    style="border-bottom: 4px solid var(--success-color); box-shadow: 0 10px 15px -3px rgba(5,150,105,0.1);">
-                    <h3 style="display: flex; align-items: center; gap: 6px;"><span style="font-size: 1.1rem;">✅</span>
-                        Completed</h3>
-                    <span id="statCompleted" class="text-success">0</span>
+
+                <!-- Modal Tabs Header -->
+                <div class="modal-tabs"
+                    style="display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid var(--glass-border); padding-bottom: 0;">
+                    <button id="modalTabAccount" class="modal-tab-btn active" onclick="switchModalTab('account')"
+                        style="padding: 12px 16px; border: none; background: transparent; font-weight: 500; border-bottom: 2px solid var(--text-primary); color: var(--text-primary); cursor: pointer; transition: all 0.2s;">
+                        Quản lý Account</button>
+                    <button id="modalTabMapping" class="modal-tab-btn" onclick="switchModalTab('mapping')"
+                        style="padding: 12px 16px; border: none; background: transparent; font-weight: 500; border-bottom: 2px solid transparent; color: var(--text-secondary); cursor: pointer; transition: all 0.2s;">
+                        Phân bổ Luồng</button>
                 </div>
-                <div class="stat-card glass"
-                    style="border-bottom: 4px solid var(--warning-color); box-shadow: 0 10px 15px -3px rgba(217,119,6,0.1);">
-                    <h3 style="display: flex; align-items: center; gap: 6px;"><span style="font-size: 1.1rem;">⏳</span>
-                        Pending</h3>
-                    <span id="statPending" class="text-warning">0</span>
+
+                <!-- Tab Content: Account -->
+                <div id="modalContentAccount" class="modal-tab-content" style="display: flex; gap: 32px; flex: 1;">
+                    <!-- Left Column: Add Account -->
+                    <div style="flex: 1; min-width: 300px;">
+                        <h4 style="margin: 0 0 16px 0; color: var(--text-primary); font-weight: 500;">Thêm Account Mới
+                        </h4>
+                        <input type="email" id="newProfileEmail" placeholder="Email Google" class="input-row"
+                            style="width: 100%; margin-bottom: 12px; padding: 12px; border-radius: 8px; border: 1px solid var(--glass-border); background: #fafafa; outline: none; transition: border-color 0.2s;">
+                        <input type="password" id="newProfilePassword" placeholder="Mật khẩu (Trống nếu manual)"
+                            class="input-row"
+                            style="width: 100%; margin-bottom: 12px; padding: 12px; border-radius: 8px; border: 1px solid var(--glass-border); background: #fafafa; outline: none; transition: border-color 0.2s;">
+                        <input type="password" id="newProfile2FA" placeholder="Mã 2FA Secret (nếu auto login)"
+                            class="input-row"
+                            style="width: 100%; margin-bottom: 16px; padding: 12px; border-radius: 8px; border: 1px solid var(--glass-border); background: #fafafa; outline: none; transition: border-color 0.2s;">
+
+                        <label
+                            style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px; display: block; font-weight: 500;">Chế
+                            độ đăng nhập:</label>
+                        <div class="radio-group"
+                            style="background: transparent; border: 1px solid var(--glass-border); padding: 12px; border-radius: 8px; display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px;">
+                            <label><input type="radio" name="newProfileLoginType" value="manual" checked> Thủ công <span
+                                    style="font-size: 0.75rem; color: #888;">(Tự nhập OTP)</span></label>
+                            <label><input type="radio" name="newProfileLoginType" value="auto"> Tự động <span
+                                    style="font-size: 0.75rem; color: #888;">(Cung cấp 2FA Secret)</span></label>
+                        </div>
+                        <button id="btnSaveNewProfile" class="vercel-btn"
+                            style="width: 100%; padding: 12px; border-radius: 8px; font-weight: 500; font-size: 0.95rem;">Thêm
+                            Account</button>
+                    </div>
+
+                    <!-- Right Column: Account List -->
+                    <div style="flex: 1.5; min-width: 0;">
+                        <h4 style="margin: 0 0 16px 0; color: var(--text-primary); font-weight: 500;">Hệ thống Account
+                            hiện có</h4>
+                        <div id="modalProfileList" class="accordion-list"
+                            style="max-height: 400px; overflow-y: auto; padding-right: 8px;">
+                            <!-- Injected by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab Content: Mapping -->
+                <div id="modalContentMapping" class="modal-tab-content" style="display: none; flex: 1;">
+                    <div style="margin-bottom: 24px;">
+                        <h4 style="margin: 0 0 8px 0; color: var(--text-primary); font-weight: 500;">Phân bổ Luồng
+                            (Thread Mappings)</h4>
+                        <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0;">Trải nghiệm giao diện
+                            rộng rãi để chọn tài khoản cho từng Worker một cách dễ dàng nhất.</p>
+                    </div>
+
+                    <div
+                        style="display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(0,0,0,0.05); padding-right: 12px;">
+                        <span style="flex: 1;">Luồng (Worker)</span>
+                        <span style="flex: 2;">Thực thể Account liên kết</span>
+                    </div>
+
+                    <div id="mappingList"
+                        style="display: flex; flex-direction: column; gap: 12px; max-height: 350px; overflow-y: auto; overflow-x: hidden; padding-right: 8px;">
+                        <!-- Injected by JS -->
+                    </div>
+                </div>
+
+                <div style="border-top: 1px solid var(--glass-border); margin-top: 24px; padding-top: 24px;">
+                    <button id="btnCloseModal" class="vercel-btn-outline"
+                        style="width: 100%; padding: 12px; border-radius: 8px; font-weight: 500; font-size: 0.95rem;">Lưu
+                        Cấu Hình & Hoàn Tất Settings</button>
                 </div>
             </div>
+        </div>
+
+        <!-- Proxy Management Modal -->
+        <div id="proxyModal"
+            style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); backdrop-filter: blur(8px); z-index: 1000; justify-content: center; align-items: center;">
+            <div
+                style="background: var(--bg-color); padding: 32px; border-radius: 20px; width: 850px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; border: 1px solid var(--glass-border);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                    <h2 style="margin: 0; color: var(--text-primary); font-weight: 600; font-size: 1.5rem;">Quản lý
+                        Proxy</h2>
+                    <button id="btnCloseProxyModalTop" class="icon-btn"
+                        style="border: none; background: transparent; font-size: 1.2rem; cursor: pointer; color: var(--text-secondary);"
+                        onclick="document.getElementById('btnCloseProxyModal').click()">✕</button>
+                </div>
+
+                <div style="display: flex; gap: 32px; flex: 1;">
+                    <!-- Left Column: Add Proxy -->
+                    <div style="flex: 1; min-width: 300px;">
+                        <h4 style="margin: 0 0 16px 0; color: var(--text-primary); font-weight: 500;">Thêm Proxy</h4>
+                        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px;">Định dạng (1
+                            dòng 1 proxy):<br><code
+                                style="background: rgba(0,0,0,0.05); padding: 2px 4px; border-radius: 4px;">IP:PORT:USER:PASS</code>
+                            hoặc <code
+                                style="background: rgba(0,0,0,0.05); padding: 2px 4px; border-radius: 4px;">IP:PORT</code>
+                        </p>
+                        <textarea id="proxyInputList" class="input-row" rows="10"
+                            placeholder="192.168.1.1:8080:user:pass"
+                            style="width: 100%; margin-bottom: 12px; padding: 12px; border-radius: 8px; border: 1px solid var(--glass-border); background: #fafafa; outline: none; transition: border-color 0.2s; font-family: monospace; resize: vertical;"></textarea>
+
+                        <button id="btnAddProxies" class="vercel-btn"
+                            style="width: 100%; padding: 12px; border-radius: 8px; font-weight: 500; font-size: 0.95rem; margin-bottom: 12px;">+
+                            Thêm vào danh sách</button>
+                        <button id="btnCheckProxies" class="secondary-btn"
+                            style="width: 100%; padding: 12px; border-radius: 8px; font-weight: 500; font-size: 0.95rem; background: rgba(37,99,235,0.05); border-color: rgba(37,99,235,0.2); color: #2563eb;">⚡
+                            Kiểm tra tất cả (Ping)</button>
+                    </div>
+
+                    <!-- Right Column: Proxy List -->
+                    <div style="flex: 1.5; min-width: 0;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <h4 style="margin: 0; color: var(--text-primary); font-weight: 500;">
+                                Danh sách Proxy
+                                <button id="btnProxyUnlock"
+                                    style="background:transparent;border:none;cursor:pointer;opacity:0.3;font-size:0.8rem;transition:opacity 0.2s;"
+                                    title="Unlock System Proxies">🔓</button>
+                            </h4>
+                            <button id="btnDeleteDeadProxies" class="action-btn"
+                                style="color: var(--danger-color); font-size: 0.85rem; border: none; background: transparent; cursor: pointer;">🗑️
+                                Xóa proxy chết</button>
+                        </div>
+
+                        <div style="display: flex; gap: 8px; margin-bottom: 12px; font-size: 0.85rem;">
+                            <span id="proxyLiveCount" class="status-badge badge-ok">Sống: 0</span>
+                            <span id="proxyDeadCount" class="status-badge badge-error">Chết: 0</span>
+                            <span id="proxyUntestedCount" class="status-badge"
+                                style="background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 12px;">Chưa
+                                test: 0</span>
+                        </div>
+
+                        <div id="proxyListContainer"
+                            style="display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto; padding-right: 8px;">
+                            <!-- Injected by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <div style="border-top: 1px solid var(--glass-border); margin-top: 24px; padding-top: 24px;">
+                    <button id="btnCloseProxyModal" class="vercel-btn-outline"
+                        style="width: 100%; padding: 12px; border-radius: 8px; font-weight: 500; font-size: 0.95rem;">Đóng
+                        Menu Proxy</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Stats Row Removed -->
 
             <!-- Job Table -->
             <div class="table-container glass"

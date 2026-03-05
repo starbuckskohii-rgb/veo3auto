@@ -1,6 +1,0 @@
-{"logTime": "0227/084550", {"lineNo":0,"logLevel":2,"message":"MaybeOrchestrateMigration: MaybeOrchestrateMigration","source":"Workspace Migration","timestamp":"2026-02-27T08:45:50.875Z"}}
-{"logTime": "0227/084550", {"lineNo":0,"logLevel":2,"message":"Migrate_FeatureCheck: Migrate_FeatureCheck","source":"Workspace Migration","timestamp":"2026-02-27T08:45:50.875Z"}}
-{"logTime": "0227/084550", {"lineNo":0,"logLevel":2,"message":"Migrate_MaybeHavePrefs: Migrate_MaybeHavePrefs","source":"Workspace Migration","timestamp":"2026-02-27T08:45:50.876Z"}}
-{"logTime": "0227/084550", {"lineNo":0,"logLevel":2,"message":"Migrate_Schedule: Migrate_Schedule","source":"Workspace Migration","timestamp":"2026-02-27T08:45:50.876Z"}}
-{"logTime": "0227/084550", {"lineNo":0,"logLevel":2,"message":"Migrate_Schedule: Migration not enabled or profile in AAD carve-out, but otherwise Eligible","source":"Workspace Migration","timestamp":"2026-02-27T08:45:50.876Z"}}
-{"logTime": "0227/084550", {"lineNo":0,"logLevel":2,"message":"MaybeOrchestrateMigration: ~MaybeOrchestrateMigration","source":"Workspace Migration","timestamp":"2026-02-27T08:45:50.876Z"}}

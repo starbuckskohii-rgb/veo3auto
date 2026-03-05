@@ -57,6 +57,41 @@ app.on('ready', () => {
 });
 
 app.on('window-all-closed', function () {
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        const rootDir = process.cwd();
+        // The outputDir is typically defined in automation.js or by the user, 
+        // but default is usually a subfolder or we scan the root/Output directories.
+        // Let's implement a robust recursive search for 'temp_' folders and let the main process clean them.
+
+        const deleteTempFolders = (dir) => {
+            if (!fs.existsSync(dir)) return;
+            const items = fs.readdirSync(dir);
+            for (const item of items) {
+                const fullPath = path.join(dir, item);
+                if (fs.statSync(fullPath).isDirectory()) {
+                    if (item.startsWith('temp_')) {
+                        console.log(`Cleaning up leftover temp folder: ${fullPath}`);
+                        try {
+                            fs.rmSync(fullPath, { recursive: true, force: true });
+                        } catch (e) {
+                            console.error(`Failed to delete ${fullPath}: ${e.message}`);
+                        }
+                    } else if (item !== 'node_modules' && item !== '.git') {
+                        deleteTempFolders(fullPath);
+                    }
+                }
+            }
+        };
+
+        // Scan root directory and common output directories
+        deleteTempFolders(rootDir);
+
+    } catch (e) {
+        console.error("Error during temp cleanup on exit:", e);
+    }
+
     if (process.platform !== 'darwin') {
         app.quit();
     }

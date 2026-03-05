@@ -7,7 +7,7 @@ const REPO_OWNER = 'starbuckskohii-rgb';
 const REPO_NAME = 'veo3auto';
 const VERSION = pkg.version;
 const TAG_NAME = `v${VERSION}`;
-const RELEASE_NAME = `Veo3 Auto v${VERSION} (Image Upload & UI Verification Fixes)`;
+const RELEASE_NAME = `Veo3 Auto v${VERSION} (T2V Soft Retry & Attach Bounding Fixes)`;
 const ASSETS_TO_UPLOAD = [
     { path: path.resolve(`dist/Veo3.Auto.Setup.${VERSION}.exe`), name: `Veo3.Auto.Setup.${VERSION}.exe` },
     { path: path.resolve('dist/latest.yml'), name: 'latest.yml' }

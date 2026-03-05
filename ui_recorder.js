@@ -88,8 +88,8 @@
 {
     modes: {
         'T2V': { x: ${recordedCoords.T2V.x}, y: ${recordedCoords.T2V.y} },
-        'I2V': { x: ${recordedCoords.I2V.x}, y: ${recordedCoords.I2V.y} },
-        'IN2V': { x: ${recordedCoords.IN2V.x}, y: ${recordedCoords.IN2V.y} },
+        'IN2V': { x: ${recordedCoords.I2V.x}, y: ${recordedCoords.I2V.y} },
+        'I2V': { x: ${recordedCoords.IN2V.x}, y: ${recordedCoords.IN2V.y} },
         'IMG': { x: ${recordedCoords.IMG.x}, y: ${recordedCoords.IMG.y} },
         trigger_create_menu: { x: ${recordedCoords.trigger_create_menu.x}, y: ${recordedCoords.trigger_create_menu.y} }
     },
@@ -125,7 +125,7 @@
     viewMode: {
         trigger: { x: ${recordedCoords.trigger_view_mode.x}, y: ${recordedCoords.trigger_view_mode.y} },
         batch: { x: ${recordedCoords.view_batch.x}, y: ${recordedCoords.view_batch.y} },
-        size_L: { x: ${recordedCoords.view_grid_L.x}, y: ${recordedCoords.view_grid_L.y} },
+        size_S: { x: ${recordedCoords.view_grid_S.x}, y: ${recordedCoords.view_grid_S.y} },
         sound_off: { x: ${recordedCoords.view_sound_off.x}, y: ${recordedCoords.view_sound_off.y} },
         info_on: { x: ${recordedCoords.view_info_on.x}, y: ${recordedCoords.view_info_on.y} },
         clear_off: { x: ${recordedCoords.view_clear_off.x}, y: ${recordedCoords.view_clear_off.y} }
