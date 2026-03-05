@@ -776,16 +776,17 @@ class AutomationWorker {
         const validPaths = [];
         for (const p of rawImagePaths) {
             if (p && typeof p === 'string') {
-                const trimmed = p.trim();
+                // Loại bỏ ký tự ẩn (như Left-to-Right mark \u202A hay xuất hiện khi copy từ Windows Explorer) và dấu nháy kép
+                const cleanPath = p.replace(/[\u200B-\u200D\uFEFF\u202A-\u202E]/g, '').replace(/^["']|["']$/g, '').trim();
                 let exists = false;
                 try {
-                    exists = fs.existsSync(trimmed);
+                    exists = fs.existsSync(cleanPath);
                 } catch (e) { }
 
-                if (trimmed && exists) {
-                    validPaths.push(trimmed);
-                } else if (trimmed) {
-                    this.log(`⚠️ Bỏ qua file ảnh không tồn tại ở đường dẫn: ${trimmed}`);
+                if (cleanPath && exists) {
+                    validPaths.push(cleanPath);
+                } else if (cleanPath || p.trim()) {
+                    this.log(`⚠️ Bỏ qua file ảnh không tồn tại ở đường dẫn: ${cleanPath || p}`);
                 }
             }
         }
@@ -819,9 +820,12 @@ class AutomationWorker {
                 if (!isMatch) return false;
 
                 // Lọc để TRÁNH nút + ở góc trên cùng bên phải màn hình (New Project)
-                // Nút upload ảnh của Editor chát luôn nằm nửa dưới màn hình
+                // Nút upload ảnh của Editor chát luôn nằm nửa dưới màn hình và ở khu vực TRUNG TÂM HOẶC BÊN TRÁI.
                 const r = b.getBoundingClientRect();
-                return r.y > (window.innerHeight / 2);
+                const isOnScreenBottom = r.y > (window.innerHeight / 2);
+                const isNotFarRight = r.x < (window.innerWidth - 300); // Ngăn không bấm nhầm vào các widget góc phải tít tắp (như X = 1371)
+
+                return isOnScreenBottom && isNotFarRight;
             });
 
             if (attachBtn) {
@@ -1556,19 +1560,23 @@ class AutomationWorker {
             this.log('Đang chờ hệ thống xác nhận đã gửi lệnh (Nút Submit bị khóa)...');
             let submitConfirmed = false;
             for (let check = 0; check < 10; check++) {
-                const isSubmitLocked = await page.evaluate(() => {
-                    const submitButtons = Array.from(document.querySelectorAll('button[aria-label="Tạo video"], button[aria-label="Create Video"], button[role="button"]')).filter(b => {
-                        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-                        return aria.includes('tạo') || aria.includes('create') || aria.includes('generate');
+                try {
+                    const isSubmitLocked = await page.evaluate(() => {
+                        const submitButtons = Array.from(document.querySelectorAll('button[aria-label="Tạo video"], button[aria-label="Create Video"], button[role="button"]')).filter(b => {
+                            const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+                            return aria.includes('tạo') || aria.includes('create') || aria.includes('generate');
+                        });
+                        // Lệnh thực sự đã bay đi khi mọi nút Submit trên màn hình đều disabled hoặc không tìm thấy nút nào.
+                        return submitButtons.length === 0 || submitButtons.every(b => b.hasAttribute('disabled') || b.getAttribute('aria-disabled') === 'true');
                     });
-                    // Lệnh thực sự đã bay đi khi mọi nút Submit trên màn hình đều disabled hoặc không tìm thấy nút nào.
-                    return submitButtons.length === 0 || submitButtons.every(b => b.hasAttribute('disabled') || b.getAttribute('aria-disabled') === 'true');
-                });
 
-                if (isSubmitLocked) {
-                    submitConfirmed = true;
-                    this.log('Đã xác nhận lệnh Tạo Video được gửi thành công. Bắt đầu theo dõi tiến trình Render...');
-                    break;
+                    if (isSubmitLocked) {
+                        submitConfirmed = true;
+                        this.log('Đã xác nhận lệnh Tạo Video được gửi thành công. Bắt đầu theo dõi tiến trình Render...');
+                        break;
+                    }
+                } catch (frameErr) {
+                    this.log('ℹ️ Giao diện đang tự tải lại, thẻ DOM bị mất tạm thời (Attached Frame Error). Đang thử lại...');
                 }
                 await this.sleep(1500);
             }
@@ -1579,7 +1587,7 @@ class AutomationWorker {
 
             // Wait a max 90s for video/images (nano banana 2 takes 65s)
             let hasError = false;
-            let maxWaitSeconds = 90;
+            let maxWaitSeconds = (job.TYPE_VIDEO === 'IN2V') ? 100 : 90;
             const settings = job.settings || {};
             const isImg = job.TYPE_VIDEO === 'IMG';
             const currentSettings = isImg ? settings.imgSettings : settings.videoSettings;
@@ -1643,76 +1651,21 @@ class AutomationWorker {
                     });
                     if (isGeneratingText && isTrulyGenerating) return { isError: false, reason: 'is_generating_veto' };
 
-                    // 1. Check for global dialog error
-                    const globalTexts = Array.from(document.querySelectorAll('div[role="dialog"] h1, div[role="dialog"] h2, div[role="dialog"] p'));
-                    const hasGlobalError = globalTexts.some(el => {
-                        if (!isVisible(el)) return false;
-                        const t = el.innerText.trim();
-                        return t === 'Đã xảy ra lỗi.' || t === 'Something went wrong.' || t.includes('Đã xảy ra lỗi');
-                    });
-                    if (hasGlobalError) return { isError: true, reason: 'global_dialog_error' };
+                    // 1. Chỉ tìm Dialog Báo Lỗi Global hoặc Thông báo Lỗi Nổi Bật (Không tìm lỗi trong thẻ lịch sử cũ)
+                    // Google Veo luôn hiện một thông báo khi tạo lỗi như: "Đã xảy ra lỗi.", "Không thành công."
+                    const alerts = Array.from(document.querySelectorAll('[role="alert"], [class*="snackbar"], snack-bar, [role="alertdialog"], div[role="dialog"] h1, div[role="dialog"] h2, div[role="dialog"] p'));
 
-                    // 2. Check for error indicators specifically for the NEWEST generation card.
-                    // We gather all possible error indicators globally and find the ONE at the top of the page (lowest Y).
-
-                    // Indicator A: Text saying "Không thành công" or "Unsuccessful"
-                    const errorTexts = Array.from(document.querySelectorAll('span, p, h2, h3, div')).filter(el => {
-                        if (!isVisible(el)) return false;
-                        if (el.children.length > 0 && el.tagName !== 'SPAN' && el.tagName !== 'P') return false;
-                        const t = el.innerText.trim();
-                        return t === 'Không thành công' || t === 'Unsuccessful' || t.includes('tạo không thành công');
-                    });
-
-                    // Indicator B: A cluster of exactly 3 visible icon buttons (Refresh, Undo, Delete)
-                    // These are always visibly rendered at the bottom right of a failed generation card.
-                    const buttonClusters = Array.from(document.querySelectorAll('div')).filter(container => {
-                        if (!isVisible(container)) return false;
-                        const rect = container.getBoundingClientRect();
-                        // Tight cluster constraint (a small flex row at bottom right)
-                        if (rect.height > 100 || rect.width > 400 || rect.width < 50) return false;
-
-                        // We count how many icon buttons are visible inside this specific container
-                        const btns = Array.from(container.querySelectorAll('button, [role="button"]')).filter(b => isVisible(b) && b.querySelector('svg'));
-                        // Exactly 3 distinct icon buttons visible permanently identifies an error card block
-                        return btns.length === 3;
-                    });
-
-                    const allErrors = [...errorTexts, ...buttonClusters];
-
-                    if (allErrors.length === 0) return { isError: false, reason: 'no_error_indicators' };
-
-                    // Find the topmost error item (lowest Y)
-                    let minErrY = Infinity;
-                    for (const el of allErrors) {
-                        const y = el.getBoundingClientRect().y;
-                        if (y > 0 && y < minErrY) { minErrY = y; }
+                    for (let a of alerts) {
+                        if (!isVisible(a)) continue;
+                        const t = (a.innerText || "").trim().toLowerCase();
+                        if (t.includes('đã xảy ra lỗi') || t.includes('something went wrong') || t.includes('không thành công') || t.includes('unsuccessful') || t.includes('thử lại') || t.includes('vi phạm')) {
+                            return { isError: true, reason: 'global_dialog_error' };
+                        }
                     }
 
-                    // Find the topmost generation anchor (any media, "Ngày tạo", "Veo 3.1", "Created")
-                    const cardAnchors = Array.from(document.querySelectorAll('span, p, div, video, canvas, img')).filter(el => {
-                        if (!isVisible(el)) return false;
-                        const tag = el.tagName;
-                        if (tag === 'VIDEO' || tag === 'CANVAS') return el.getBoundingClientRect().width > 100;
-                        if (tag === 'IMG') return el.getBoundingClientRect().width > 100 && !el.src.includes('avatar') && !el.src.includes('logo');
-                        if (el.children.length > 0 && tag !== 'SPAN' && tag !== 'P') return false;
-                        const t = el.innerText.trim();
-                        return t.includes('Ngày tạo') || t.includes('Created') || t.includes('Veo 3.1');
-                    });
-
-                    let minAnchorY = minErrY; // Default to err Y so it works even if no other elements found
-                    for (const el of cardAnchors) {
-                        const y = el.getBoundingClientRect().y;
-                        if (y > 50 && y < minAnchorY) minAnchorY = y;
-                    }
-
-                    // If the topmost error text or button cluster is within the same general vertical space as the topmost generation item,
-                    // or if it's placed strictly BEFORE any media/anchors (common for errors pushing down history),
-                    // then the NEWEST generation is a failure.
-                    if (minErrY <= minAnchorY + 200) {
-                        return { isError: true, reason: 'newest_generation_failed' };
-                    }
-
-                    return { isError: false, reason: 'error_in_history_only' };
+                    // Không còn quét lịch sử lỗi bằng tọa độ Y nữa. Điều này ngăn chặn tình hướng "Poison Pill"
+                    // (Lỗi cũ nằm trên đỉnh lịch sử làm tất cả Job mới đều bị đánh giá là lỗi).
+                    return { isError: false, reason: 'no_error_indicators' };
                 });
 
                 let currentErrorReason = '';
