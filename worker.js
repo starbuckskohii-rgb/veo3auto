@@ -1911,6 +1911,17 @@ class AutomationWorker {
 
                 const hasImgCard = await page.evaluate(el => el instanceof Element, imgCard);
 
+                if (hasImgCard) {
+                    this.log('Scrolling image into view to get fresh coordinates...');
+                    await page.evaluate(el => el.scrollIntoView({ behavior: 'instant', block: 'center' }), imgCard);
+                    await this.sleep(500);
+
+                    const box = await imgCard.boundingBox();
+                    if (box) {
+                        targetMediaCoords = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+                    }
+                }
+
                 if (targetMediaCoords) {
                     this.log(`Hovering explicit target at x: ${targetMediaCoords.x}, y: ${targetMediaCoords.y}...`);
                     await page.mouse.move(targetMediaCoords.x, targetMediaCoords.y);
@@ -2070,6 +2081,17 @@ class AutomationWorker {
                 });
 
                 const hasVideoCard = await page.evaluate(el => el instanceof Element, videoCard);
+
+                if (hasVideoCard) {
+                    this.log('Scrolling video into view to get fresh coordinates...');
+                    await page.evaluate(el => el.scrollIntoView({ behavior: 'instant', block: 'center' }), videoCard);
+                    await this.sleep(500);
+
+                    const box = await videoCard.boundingBox();
+                    if (box) {
+                        targetMediaCoords = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+                    }
+                }
 
                 if (targetMediaCoords) {
                     this.log(`Hovering explicit target at x: ${targetMediaCoords.x}, y: ${targetMediaCoords.y}...`);
