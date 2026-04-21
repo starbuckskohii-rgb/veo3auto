@@ -13,6 +13,38 @@
 </head>
 
 <body>
+    <!-- Login Overlay -->
+    <div id="loginOverlay"
+        style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 9999; display: flex; justify-content: center; align-items: center; flex-direction: column;">
+        <div
+            style="background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 400px; text-align: center; border: 1px solid var(--glass-border);">
+            <div style="margin-bottom: 24px;">
+                <h2 style="margin: 0; color: var(--text-primary); font-size: 1.5rem; font-weight: 600;">License
+                    Verification</h2>
+                <p style="margin: 8px 0 0; color: var(--text-secondary); font-size: 0.9rem;">Please enter your
+                    credentials</p>
+            </div>
+            <input type="email" id="loginEmail" placeholder="Email Account"
+                style="width: 100%; padding: 12px; margin-bottom: 16px; border-radius: 8px; border: 1px solid var(--glass-border); background: #fafafa; outline: none; font-size: 0.95rem;">
+            <input type="password" id="loginPassword" placeholder="Password"
+                style="width: 100%; padding: 12px; margin-bottom: 24px; border-radius: 8px; border: 1px solid var(--glass-border); background: #fafafa; outline: none; font-size: 0.95rem;">
+            <button id="btnLoginAction" class="primary-btn"
+                style="width: 100%; padding: 14px; border-radius: 8px; font-size: 1rem; font-weight: 500; text-align: center;">Đăng
+                Nhập Tool</button>
+            <div id="loginError"
+                style="color: var(--danger-color); margin-top: 16px; font-size: 0.9rem; display: none; background: rgba(220,38,38,0.05); padding: 8px; border-radius: 8px;">
+            </div>
+            <div id="loginStatus"
+                style="color: var(--text-secondary); margin-top: 16px; font-size: 0.9rem; display: none; font-weight: 500;">
+                Đang kiểm tra thông tin Security...</div>
+        </div>
+        <div
+            style="margin-top: 24px; color: var(--text-secondary); font-size: 0.8rem; display: flex; align-items: center; gap: 8px;">
+            <span
+                style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
+            Protected by Cloud Auth Security
+        </div>
+    </div>
     <div class="app-container">
         <!-- Sidebar -->
         <aside class="sidebar glass"
@@ -132,8 +164,8 @@
                                 <option value="Veo 3.1 - Fast">Veo 3.1 - Fast</option>
                             </select>
                             <select id="videoResolution" class="small-select" style="grid-column: span 2;">
-                                <option value="720p" selected>Chất lượng 720p (Nhanh)</option>
-                                <option value="1080p">Chất lượng 1080p (Chờ Upscale 60s)</option>
+                                <option value="720p">Chất lượng 720p (Nhanh)</option>
+                                <option value="1080p" selected>Chất lượng 1080p (Chờ Upscale 60s)</option>
                             </select>
                         </div>
                     </div>
@@ -144,6 +176,9 @@
                             <select id="imgRatio" class="small-select">
                                 <option value="16:9">Tỷ lệ 16:9</option>
                                 <option value="9:16">Tỷ lệ 9:16</option>
+                                <option value="1:1">Tỷ lệ 1:1</option>
+                                <option value="4:3">Tỷ lệ 4:3</option>
+                                <option value="3:4">Tỷ lệ 3:4</option>
                             </select>
                             <select id="imgCount" class="small-select">
                                 <option value="1">1 Đầu ra</option>
@@ -395,6 +430,7 @@
         </main>
     </div>
     <script src="app.js"></script>
+    <script type="module" src="firebase-auth.js"></script>
 </body>
 
 </html>

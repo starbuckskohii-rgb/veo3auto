@@ -426,7 +426,8 @@ async function loadProfiles() {
 
         renderMappingList();
     } catch (e) {
-        console.error('Failed to load profiles');
+        console.error('Failed to load profiles', e);
+        alert('Lỗi khi tải danh sách profile: ' + e.message);
     }
 }
 
@@ -511,31 +512,58 @@ function renderMappingList() {
 // Initial Load
 loadProfiles();
 
-if (btnManageProfiles) btnManageProfiles.addEventListener('click', () => profileModal.style.display = 'flex');
+if (btnManageProfiles) btnManageProfiles.addEventListener('click', () => {
+    loadProfiles();
+    profileModal.style.display = 'flex';
+});
 if (btnCloseModal) btnCloseModal.addEventListener('click', () => profileModal.style.display = 'none');
 
 if (btnSaveNewProfile) {
     btnSaveNewProfile.addEventListener('click', async () => {
-        const email = document.getElementById('newProfileEmail').value;
-        const password = document.getElementById('newProfilePassword').value;
-        const twoFactorSecret = document.getElementById('newProfile2FA').value;
-        const loginRadio = document.querySelector('input[name="newProfileLoginType"]:checked');
-        const loginType = loginRadio ? loginRadio.value : 'manual';
+        try {
+            const email = document.getElementById('newProfileEmail').value.trim();
+            const password = document.getElementById('newProfilePassword').value;
+            const twoFactorSecret = document.getElementById('newProfile2FA').value.trim();
+            const loginRadio = document.querySelector('input[name="newProfileLoginType"]:checked');
+            const loginType = loginRadio ? loginRadio.value : 'manual';
 
-        if (!email) return alert('Vui lòng nhập Email Google');
+            if (!email) return alert('Vui lòng nhập Email Google');
 
-        await fetch('/api/accounts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ profileName: email, email, password, twoFactorSecret, loginType })
-        });
+            const res = await fetch('/api/accounts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ profileName: email, email, password, twoFactorSecret, loginType })
+            });
+            
+            let result;
+            try {
+                result = await res.json();
+            } catch (err) {
+                console.error("Failed to parse response JSON", err);
+                alert('Lỗi từ máy chủ: Không thể xử lý yêu cầu (Máy chủ bị sập hoặc trả về HTML thay vì JSON).');
+                return;
+            }
 
-        // reset form
-        document.getElementById('newProfileEmail').value = '';
-        document.getElementById('newProfilePassword').value = '';
-        document.getElementById('newProfile2FA').value = '';
+            if (!res.ok || result.error) {
+                alert('Lỗi: ' + (result.error || 'Thêm tài khoản thất bại.'));
+                return;
+            }
 
-        loadProfiles();
+            // reset form
+            document.getElementById('newProfileEmail').value = '';
+            document.getElementById('newProfilePassword').value = '';
+            document.getElementById('newProfile2FA').value = '';
+
+            // Automatically select 'manual' type back
+            const manualRadio = document.querySelector('input[name="newProfileLoginType"][value="manual"]');
+            if (manualRadio) manualRadio.checked = true;
+
+            await loadProfiles();
+            alert('Thêm tài khoản thành công!');
+        } catch (error) {
+            console.error("Thêm tài khoản lỗi nội bộ:", error);
+            alert('Lỗi mạng hoặc hệ thống: ' + error.message);
+        }
     });
 }
 
@@ -572,7 +600,7 @@ btnStart.addEventListener('click', async () => {
         ratio: document.getElementById('videoRatio').value,
         count: parseInt(document.getElementById('videoCount').value),
         model: document.getElementById('videoModel').value,
-        resolution: document.getElementById('videoResolution') ? document.getElementById('videoResolution').value : '720p'
+        resolution: document.getElementById('videoResolution') ? document.getElementById('videoResolution').value : '1080p'
     };
 
     const imgSettings = {

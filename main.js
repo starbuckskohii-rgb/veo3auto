@@ -35,6 +35,7 @@ function startServer() {
         const userDataPath = app.getPath('userData');
         process.env.USER_DATA_PATH = userDataPath;
         process.env.PUPPETEER_CACHE_DIR = path.join(userDataPath, 'puppeteer_cache');
+        process.env.NO_AUTH = 'true'; // Skip Firebase login verification
 
         // Create dirs if not exist
         const fs = require('fs');

@@ -68,7 +68,21 @@ class AutomationWorker {
         }
 
         const anchorProfilePath = path.join(baseDir, accountProfileName, `${this.browserType}_data`);
-        const baseProfileName = this.isShadowProfile ? `${accountProfileName}_shadow_${this.id}` : accountProfileName;
+        
+        // --- XÓA RÁC CÁC TÀI KHOẢN SHADOW BỊ KẸT TỪ LẦN CHẠY TRƯỚC ---
+        // Quét toàn bộ shadow folder của account này (mọi worker ID), vì chúng đều là rác từ lần chạy trước
+        try {
+            const profilesDir = fs.readdirSync(baseDir);
+            for (const folder of profilesDir) {
+                if (folder.startsWith(`${accountProfileName}_shadow_`)) {
+                    const oldPath = path.join(baseDir, folder);
+                    this.log(`[Shadow GC] Dọn dẹp rác từ lần chạy cũ: ${folder}`);
+                    fs.promises.rm(oldPath, { recursive: true, force: true }).catch(() => {});
+                }
+            }
+        } catch (e) {}
+
+        const baseProfileName = this.isShadowProfile ? `${accountProfileName}_shadow_${this.id}_${Date.now()}` : accountProfileName;
         this.profilePath = path.join(baseDir, baseProfileName, `${this.browserType}_data`);
 
         if (!fs.existsSync(this.profilePath)) {
@@ -185,12 +199,13 @@ class AutomationWorker {
                 '--start-maximized',
                 '--disable-infobars',
                 '--profile-directory=Default',
-                '--disable-features=IsolateOrigins,site-per-process,AutomationControlled,TrackingProtection3pcd,TrackingProtection,PrivacySandboxSettings4,msTrackingPrevention',
+                '--disable-features=IsolateOrigins,site-per-process,AutomationControlled,TrackingProtection3pcd,TrackingProtection,PrivacySandboxSettings4,msTrackingPrevention,BraveShields',
                 '--disable-dev-shm-usage',
                 '--disable-background-timer-throttling',
                 '--disable-backgrounding-occluded-windows',
                 '--disable-renderer-backgrounding',
                 '--no-first-run',
+                '--font-render-hinting=none',
                 '--no-default-browser-check',
                 '--disable-session-crashed-bubble',
                 '--hide-crash-restore-bubble',
@@ -973,6 +988,97 @@ class AutomationWorker {
         }
     }
 
+    async uploadI2VFrames(page, startImagePath, endImagePath) {
+        this.log(`Bắt đầu quy trình upload I2V Frames...`);
+        const cleanStart = startImagePath ? startImagePath.replace(/[\u200B-\u200D\uFEFF\u202A-\u202E]/g, '').replace(/^["']|["']$/g, '').trim() : null;
+        const cleanEnd = endImagePath ? endImagePath.replace(/[\u200B-\u200D\uFEFF\u202A-\u202E]/g, '').replace(/^["']|["']$/g, '').trim() : null;
+
+        const uploadBox = async (path, keywords) => {
+            if (!path || !fs.existsSync(path)) {
+                this.log(`⚠️ Bỏ qua frame (${keywords.join('/')}) vì file không tồn tại: ${path}`);
+                return;
+            }
+            this.log(`Tìm ô "${keywords[0]}" để tải lên frame...`);
+            
+            let boxCoords = await page.evaluate((kwList) => {
+                const getCenter = (r) => { return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; };
+                const isVisible = (el) => {
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0 && window.getComputedStyle(el).visibility !== 'hidden';
+                };
+                
+                const allEls = Array.from(document.querySelectorAll('button, div[role="button"], div[role="presentation"], span'));
+                for (let el of allEls) {
+                     if (!isVisible(el)) continue;
+                     const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+                     const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+                     
+                     for (let kw of kwList) {
+                         if (text.includes(kw) || aria.includes(kw)) {
+                             const r = el.getBoundingClientRect();
+                             if (r.width > 30 && r.height > 30 && r.width < 500) {
+                                 return getCenter(r);
+                             }
+                         }
+                     }
+                }
+                return null;
+            }, keywords);
+
+            if (boxCoords) {
+                this.log(`Đã tìm thấy ô chứa keyword "${keywords[0]}" tại [${boxCoords.x}, ${boxCoords.y}]. Đang click...`);
+                let attempts = 0;
+                let uploaded = false;
+                
+                while(attempts < 2 && !uploaded) {
+                    attempts++;
+                    await this.humanClick(page, boxCoords.x, boxCoords.y);
+                    await this.sleep(1500);
+
+                    const [fileChooser] = await Promise.all([
+                        page.waitForFileChooser({ timeout: 5000 }).catch(() => null),
+                        page.evaluate(() => {
+                            const items = Array.from(document.querySelectorAll('div[role="menuitem"], li, button, span'));
+                            const uploadOpt = items.find(el => {
+                                const t = el.innerText.trim().toLowerCase();
+                                return t === 'tải hình ảnh lên' || t === 'upload image' || t.includes('tải lên') || t.includes('tải hình ảnh');
+                            });
+                            if (uploadOpt) {
+                                uploadOpt.click();
+                                return true;
+                            }
+                            return false;
+                        }).catch(() => false)
+                    ]);
+
+                    if (fileChooser) {
+                        await fileChooser.accept([path]);
+                        this.log(`✅ Đã đính kèm ảnh: ${path}`);
+                        await this.sleep(3000); // Chờ UI upload
+                        uploaded = true;
+                    } else {
+                        boxCoords.x += 10;
+                        boxCoords.y += 10;
+                        this.log(`⚠️ Không mở được File Chooser lần ${attempts}. Thử lại...`);
+                    }
+                }
+            } else {
+                this.log(`❌ Không tìm thấy ô chứa keyword "${keywords[0]}" trên giao diện.`);
+            }
+        };
+
+        if (cleanStart) {
+            await uploadBox(cleanStart, ['bắt đầu', 'start', 'khung hình đầu']);
+        }
+
+        if (cleanEnd) {
+            await uploadBox(cleanEnd, ['kết thúc', 'end', 'khung hình cuối']);
+        }
+
+        this.log('Chờ 10 giây để hoàn tất xử lý UI cho I2V frames...');
+        await this.sleep(10000);
+    }
+
     async close() {
         this.log('Closing browser instance...');
         this.isOffline = true;
@@ -988,6 +1094,7 @@ class AutomationWorker {
                 await this.browser.close();
             } catch (e) { }
             this.browser = null;
+            this.page = null;
         }
 
         // Extremely aggressive cleanup: Force kill the browser's process tree perfectly guaranteeing no locks (like chrome-err.log) remain
@@ -1000,13 +1107,23 @@ class AutomationWorker {
         // --- SHADOW PROFILE TRASH COLLECTION ---
         // NẾU ĐÂY LÀ LUỒNG ĐẺ FILE TẠM, PHẢI XÓA BỎ CHÚNG ĐỂ CỨU SSD!
         if (this.isShadowProfile && this.profilePath) {
-            const profileToDelete = this.profilePath;
+            // Xóa cả FOLDER CHA (vd: accountName_shadow_2_123/) thay vì chỉ subfolder brave_data
+            const profileToDelete = path.dirname(this.profilePath); // Lên 1 cấp: từ .../brave_data → .../accountName_shadow_2_123
+
+            // Hard kill any detached processes (like crashpad_handler) that might still be locking the profile
+            if (process.platform === 'win32') {
+                try {
+                    const folderName = require('path').basename(profileToDelete);
+                    const psCmd = `Get-CimInstance Win32_Process -Filter "Name='chrome.exe' OR Name='brave.exe' OR Name='crashpad_handler.exe' OR Name='msedge.exe'" | Where-Object { $_.CommandLine -match '${folderName}' } | Stop-Process -Force`;
+                    require('child_process').execSync(`powershell -NoProfile -Command "${psCmd}"`, { stdio: 'ignore', timeout: 5000 });
+                } catch (e) { }
+            }
+
             let retries = 0;
             const tryDelete = () => {
                 setTimeout(async () => {
                     try {
                         if (fs.existsSync(profileToDelete)) {
-                            // Dùng fs.promises.rm để chạy bất đồng bộ, không làm đơ (block) event loop
                             await fs.promises.rm(profileToDelete, { recursive: true, force: true, maxRetries: 10, retryDelay: 2000 });
                             this.log(`[Shadow Cleanup] Xóa Folder Clone thành công: ${profileToDelete}`);
                         }
@@ -1019,7 +1136,7 @@ class AutomationWorker {
                             this.log(`[Shadow Cleanup] Thất bại khi dọn dẹp (Vẫn bị khóa): ${e.message}`);
                         }
                     }
-                }, 3000); // Đợi 3 giây sau khi Chrome gọi .close() để nhả lock
+                }, 3000);
             };
             tryDelete();
         }
@@ -1229,50 +1346,97 @@ class AutomationWorker {
             // Coordinate Map from User UI Recorder V3
             const coords = {
                 modes: {
-                    'T2V': { x: 1150, y: 653 },
-                    'IN2V': { x: 1147, y: 691 },
-                    'I2V': { x: 1020, y: 691 },
-                    'IMG': { x: 1022, y: 653 },
-                    trigger_create_menu: { x: 1176, y: 889 }
+                    'T2V': { x: 1148, y: 659 },
+                    'IN2V': { x: 1018, y: 698 },
+                    'I2V': { x: 1149, y: 697 },
+                    'IMG': { x: 1018, y: 659 },
+                    trigger_create_menu: { x: 1172, y: 895 }
                 },
                 ratioVideo: {
-                    'Ngang': { x: 1020, y: 730 },
-                    'Dọc': { x: 1153, y: 727 }
+                    'Ngang': { x: 1149, y: 734 },
+                    'Dọc': { x: 1019, y: 734 }
                 },
                 ratioImage: {
-                    '16:9': { x: 1022, y: 691 },
-                    '9:16': { x: 1157, y: 691 },
+                    '16:9': { x: 976, y: 706 },
+                    '9:16': { x: 1187, y: 703 },
+                    '1:1': { x: 1081, y: 704 },
+                    '4:3': { x: 1028, y: 704 },
+                    '3:4': { x: 1135, y: 705 }
                 },
                 countVideo: {
-                    '1': { x: 981, y: 768 },
-                    '2': { x: 1048, y: 765 },
-                    '3': { x: 1114, y: 767 },
-                    '4': { x: 1179, y: 767 }
+                    '1': { x: 980, y: 773 },
+                    '2': { x: 1047, y: 773 },
+                    '3': { x: 1115, y: 772 },
+                    '4': { x: 1181, y: 774 }
                 },
                 countImage: {
-                    '1': { x: 982, y: 729 },
-                    '2': { x: 1048, y: 729 },
-                    '3': { x: 1114, y: 728 },
-                    '4': { x: 1182, y: 728 }
+                    '1': { x: 981, y: 754 },
+                    '2': { x: 1047, y: 755 },
+                    '3': { x: 1115, y: 754 },
+                    '4': { x: 1182, y: 755 }
                 },
                 model: {
-                    trigger_video: { x: 1079, y: 806 },
-                    trigger_image: { x: 1077, y: 769 },
-                    'Veo 3.1 - Fast [Lower Priority]': { x: 1062, y: 626 },
-                    'Veo 3.1 - Fast': { x: 1066, y: 583 },
-                    'Nano Banana Pro': { x: 1070, y: 811 },
-                    'nano banana 2': { x: 792, y: 850 }
+                    trigger_video: { x: 1085, y: 814 },
+                    trigger_image: { x: 1080, y: 794 },
+                    'Veo 3.1 - Fast [Lower Priority]': { x: 1084, y: 719 },
+                    'Veo 3.1 - Fast': { x: 1064, y: 675 },
+                    'Nano Banana Pro': { x: 1062, y: 836 },
+                    'nano banana 2': { x: 1064, y: 875 }
                 },
-                submitBtn: { x: 1236, y: 890 },
+                submitBtn: { x: 1318, y: 451 },
                 viewMode: {
-                    trigger: { x: 1709, y: 39 },
-                    batch: { x: 1636, y: 128 },
-                    size_S: { x: 1428, y: 202 },
-                    sound_off: { x: 1609, y: 249 },
-                    info_on: { x: 1685, y: 294 },
-                    clear_off: { x: 1611, y: 341 }
+                    trigger: { x: 1669, y: 40 },
+                    batch: { x: 1599, y: 125 },
+                    size_S: { x: 1388, y: 202 },
+                    sound_off: { x: 1563, y: 249 },
+                    info_on: { x: 1644, y: 339 },
+                    clear_off: { x: 1571, y: 386 }
                 }
             };
+
+            if (this.browserType === 'brave') {
+                this.log('Applying specific UI coordinates for Brave browser...');
+                coords.modes = {
+                    'T2V': { x: 1148, y: 659 },
+                    'IN2V': { x: 1018, y: 698 },
+                    'I2V': { x: 1149, y: 697 },
+                    'IMG': { x: 1018, y: 659 },
+                    trigger_create_menu: { x: 1172, y: 895 }
+                };
+                coords.ratioVideo = {
+                    'Ngang': { x: 1149, y: 734 },
+                    'Dọc': { x: 1019, y: 734 }
+                };
+                coords.ratioImage = {
+                    '16:9': { x: 976, y: 706 },
+                    '9:16': { x: 1187, y: 703 },
+                    '1:1': { x: 1081, y: 704 },
+                    '4:3': { x: 1028, y: 704 },
+                    '3:4': { x: 1135, y: 705 }
+                };
+                coords.countVideo = {
+                    '1': { x: 980, y: 773 },
+                    '2': { x: 1047, y: 773 },
+                    '3': { x: 1115, y: 772 },
+                    '4': { x: 1181, y: 774 }
+                };
+                coords.countImage = {
+                    '1': { x: 981, y: 754 },
+                    '2': { x: 1047, y: 755 },
+                    '3': { x: 1115, y: 754 },
+                    '4': { x: 1182, y: 755 }
+                };
+                coords.model = {
+                    ...coords.model,
+                    trigger_video: { x: 1085, y: 814 },
+                    trigger_image: { x: 1080, y: 794 },
+                    'Veo 3.1 - Fast [Lower Priority]': { x: 1084, y: 719 },
+                    'Veo 3.1 - Fast': { x: 1064, y: 675 },
+                    'Nano Banana Pro': { x: 1062, y: 836 },
+                    'nano banana 2': { x: 1064, y: 875 }
+                };
+                coords.submitBtn = { x: 1318, y: 451 };
+            }
 
             const applyViewMode = async () => {
                 await this.sleep(3000);
@@ -1472,47 +1636,53 @@ class AutomationWorker {
                 await this.sleep(1000);
 
                 // 4. Upload Images (DO THIS AFTER PROMPT SO UI STATE IS STABLE)
-                if (job.TYPE_VIDEO === 'IN2V' || job.TYPE_VIDEO === 'I2V') {
+                if (job.TYPE_VIDEO === 'IN2V') {
                     const rawPaths = [job.IMAGE_PATH, job.IMAGE_PATH_2, job.IMAGE_PATH_3];
                     await this.uploadImages(page, rawPaths);
+                } else if (job.TYPE_VIDEO === 'I2V') {
+                    await this.uploadI2VFrames(page, job.IMAGE_PATH, job.IMAGE_PATH_2);
                 }
 
                 // 4. Generate
-                this.log('Requesting Global Submit Lock to prevent rate limiting...');
-                if (this.automationService && this.automationService.requestSubmitLock) {
+                if (this.automationService && this.automationService.workerCount > 1 && this.automationService.requestSubmitLock) {
+                    this.log('Requesting Global Submit Lock to prevent rate limiting...');
                     await this.automationService.requestSubmitLock(this.id);
                 }
 
                 this.log('Attempting programmatic Submit Arrow click...');
 
-                // Attempt 1: Find the floating circle arrow button near the text area via DOM
-                let submitBtnCoords = await page.evaluate((selector) => {
-                    const editor = document.querySelector(selector);
-                    if (!editor) return null;
-                    const fieldContainer = editor.closest('div[style*="border-radius"], div[class*="container"]') || editor.parentElement.parentElement;
-                    if (!fieldContainer) return null;
-                    const buttons = Array.from(fieldContainer.querySelectorAll('button:not([disabled]), div[role="button"]:not([disabled])'));
-                    let submitBtn = null;
-                    for (const btn of buttons) {
-                        const svgs = btn.querySelectorAll('svg');
-                        for (const svg of svgs) {
-                            const path = svg.innerHTML || '';
-                            if (path.includes('arrow_forward') || path.includes('M5 13h11.17l-4.88 4.88c-.39.39-.39 1.03') || path.includes('m12 4-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z') || path.includes('M2.01 21 23 12 2.01 3 2 10l15 2-15 2z')) {
-                                submitBtn = btn; break;
+                let submitBtnCoords = null;
+                try {
+                    submitBtnCoords = await page.evaluate((selector) => {
+                        const editor = document.querySelector(selector);
+                        if (!editor) return null;
+                        const fieldContainer = editor.closest('div[style*="border-radius"], div[class*="container"]') || editor.parentElement.parentElement;
+                        if (!fieldContainer) return null;
+                        const buttons = Array.from(fieldContainer.querySelectorAll('button:not([disabled]), div[role="button"]:not([disabled])'));
+                        let submitBtn = null;
+                        for (const btn of buttons) {
+                            const svgs = btn.querySelectorAll('svg');
+                            for (const svg of svgs) {
+                                const path = svg.innerHTML || '';
+                                if (path.includes('arrow_forward') || path.includes('M5 13h11.17l-4.88 4.88c-.39.39-.39 1.03') || path.includes('m12 4-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z') || path.includes('M2.01 21 23 12 2.01 3 2 10l15 2-15 2z')) {
+                                    submitBtn = btn; break;
+                                }
                             }
+                            if (submitBtn) break;
                         }
-                        if (submitBtn) break;
-                    }
-                    if (!submitBtn) {
-                        const iconButtons = buttons.filter(b => b.textContent.replace(/\s/g, '') === '' && b.querySelector('svg'));
-                        if (iconButtons.length > 0) submitBtn = iconButtons[iconButtons.length - 1];
-                    }
-                    if (submitBtn) {
-                        const r = submitBtn.getBoundingClientRect();
-                        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-                    }
-                    return null;
-                }, editorSelector);
+                        if (!submitBtn) {
+                            const iconButtons = buttons.filter(b => b.textContent.replace(/\s/g, '') === '' && b.querySelector('svg'));
+                            if (iconButtons.length > 0) submitBtn = iconButtons[iconButtons.length - 1];
+                        }
+                        if (submitBtn) {
+                            const r = submitBtn.getBoundingClientRect();
+                            return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+                        }
+                        return null;
+                    }, editorSelector);
+                } catch (e) {
+                    this.log(`DOM evaluation for submit button failed (UI shifting): ${e.message}`);
+                }
 
                 await this.sleep(1000);
 
@@ -1557,35 +1727,46 @@ class AutomationWorker {
                 this.log('UI configuration complete. Submit attempt finished. Verifying submit status...');
             }
 
-            // --- BƯỚC KHÓA BẢO MẬT: CHỜ ĐẢM BẢO RẰNG LỆNH ĐÃ ĐƯỢC GỬI ĐI VÀ NÚT TẠO VIDEO ĐÃ BỊ KHÓA ---
-            // Nếu nút vẫn còn nhấp nháy bấm được tức là UI chưa nhận lệnh (Mạng lag hoặc kẹt ảnh upload). 
-            // Ta sẽ đợi tối đa 15 giây để nút Submit bị mờ đi. NGUYÊN TẮC: CHỈ QUÉT % TẠO VIDEO KHI NÚT SUBMIT ĐÃ TẮT.
-            this.log('Đang chờ hệ thống xác nhận đã gửi lệnh (Nút Submit bị khóa)...');
+            // --- BƯỚC KIỂM TRA: CHỜ ĐẢM BẢO RẰNG LỆNH ĐÃ ĐƯỢC GỬI ĐI VÀ HỆ THỐNG ĐANG TẠO ---
+            // Vì có thể render nhiều video đồng thời nên nút Submit không bị mờ (disabled).
+            // Ta sẽ đợi tối đa 15 giây để thấy Toast thông báo hoặc thấy % Render xuất hiện.
+            this.log('Đang chờ hệ thống xác nhận đã gửi lệnh (Toast Thông Báo hoặc % Render)...');
             let submitConfirmed = false;
             for (let check = 0; check < 10; check++) {
                 try {
-                    const isSubmitLocked = await page.evaluate(() => {
-                        const submitButtons = Array.from(document.querySelectorAll('button[aria-label="Tạo video"], button[aria-label="Create Video"], button[role="button"]')).filter(b => {
-                            const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-                            return aria.includes('tạo') || aria.includes('create') || aria.includes('generate');
+                    submitConfirmed = await page.evaluate(() => {
+                        // Check for snacks/alerts
+                        const alerts = Array.from(document.querySelectorAll('[role="alert"], [class*="snackbar"], snack-bar, .msg, .toast'));
+                        for (let a of alerts) {
+                            if (a.offsetParent === null) continue;
+                            const t = (a.innerText || "").toLowerCase();
+                            if (t.includes('đang tạo') || t.includes('creating') || t.includes('queued') || t.includes('working')) {
+                                return true;
+                            }
+                        }
+
+                        // Check for % text or Generating text
+                        const texts = Array.from(document.querySelectorAll('span, div, p'));
+                        return texts.some(el => {
+                            if (el.offsetParent === null) return false;
+                            const t = el.textContent.trim();
+                            if (t.includes('Đang tạo') || t.includes('Generating')) return true;
+                            return t.endsWith('%') && t.length > 1 && t.length <= 5 && !isNaN(parseInt(t));
                         });
-                        // Lệnh thực sự đã bay đi khi mọi nút Submit trên màn hình đều disabled hoặc không tìm thấy nút nào.
-                        return submitButtons.length === 0 || submitButtons.every(b => b.hasAttribute('disabled') || b.getAttribute('aria-disabled') === 'true');
                     });
 
-                    if (isSubmitLocked) {
-                        submitConfirmed = true;
-                        this.log('Đã xác nhận lệnh Tạo Video được gửi thành công. Bắt đầu theo dõi tiến trình Render...');
+                    if (submitConfirmed) {
+                        this.log('Đã xác nhận lệnh Tạo Video được hệ thống tiếp nhận. Bắt đầu theo dõi tiến trình Render...');
                         break;
                     }
                 } catch (frameErr) {
-                    this.log('ℹ️ Giao diện đang tự tải lại, thẻ DOM bị mất tạm thời (Attached Frame Error). Đang thử lại...');
+                    this.log('ℹ️ Giao diện đang tự tải lại, thẻ DOM bị mất tạm thời. Đang thử lại...');
                 }
                 await this.sleep(1500);
             }
 
             if (!submitConfirmed) {
-                this.log('CẢNH BÁO: Đã nhấn gửi nhưng sau 15 giây nút Submit vẫn sáng. Có thể do nghẽn UI mạng hoặc Upload ảnh bị dính lỗi chìm. Sẽ vẫn tiếp tục theo dõi nhưng có rủi ro...');
+                this.log('CẢNH BÁO: Đã nhấn gửi nhưng sau 15 giây không thấy dấu hiệu Render. Có thể do nghẽn UI mạng. Sẽ tiếp tục theo dõi nhưng có rủi ro...');
             }
 
             // Wait a max 90s for video/images (nano banana 2 takes 65s)
@@ -1634,16 +1815,7 @@ class AutomationWorker {
                     // Helper to check if element is actually visible on screen
                     const isVisible = (el) => el.offsetParent !== null;
 
-                    // KIỂM TRA ĐANG RENDER THỰC SỰ: Chỉ khi đang tạo Video thật sự, Veo mới hiện ra nút "Hủy" hoặc "Cancel" bên cạnh thẻ %
-                    // Nút submit lúc upload ảnh cũng bị khóa, nhưng KHÔNG có nút Cancel.
-                    const cancelBtns = Array.from(document.querySelectorAll('button, [role="button"]')).filter(b => {
-                        if (!isVisible(b)) return false;
-                        const t = b.innerText.trim().toLowerCase();
-                        return t === 'hủy' || t === 'cancel' || t === 'stop' || t === 'dừng';
-                    });
-                    const isTrulyGenerating = cancelBtns.length > 0;
-
-                    // 0. VETO: If there is ANY active "%" generation indicator on the screen, AND it is truly generating, do NOT trigger any errors.
+                    // 0. VETO: If there is ANY active "%" generation indicator on the screen, do NOT trigger any errors.
                     const allTexts = Array.from(document.querySelectorAll('span, div, p'));
                     const isGeneratingText = allTexts.some(el => {
                         if (!isVisible(el)) return false;
@@ -1652,22 +1824,24 @@ class AutomationWorker {
                         // Also accept Veo generating texts
                         return (t.endsWith('%') && t.length > 1 && t.length <= 5 && !isNaN(parseInt(t))) || t.includes('Đang tạo') || t.includes('Generating');
                     });
-                    if (isGeneratingText && isTrulyGenerating) return { isError: false, reason: 'is_generating_veto' };
+                    if (isGeneratingText) return { isError: false, reason: 'is_generating_veto' };
 
-                    // 1. Chỉ tìm Dialog Báo Lỗi Global hoặc Thông báo Lỗi Nổi Bật (Không tìm lỗi trong thẻ lịch sử cũ)
-                    // Google Veo luôn hiện một thông báo khi tạo lỗi như: "Đã xảy ra lỗi.", "Không thành công."
-                    const alerts = Array.from(document.querySelectorAll('[role="alert"], [class*="snackbar"], snack-bar, [role="alertdialog"], div[role="dialog"] h1, div[role="dialog"] h2, div[role="dialog"] p'));
-
-                    for (let a of alerts) {
-                        if (!isVisible(a)) continue;
-                        const t = (a.innerText || "").trim().toLowerCase();
-                        if (t.includes('đã xảy ra lỗi') || t.includes('something went wrong') || t.includes('không thành công') || t.includes('unsuccessful') || t.includes('thử lại') || t.includes('vi phạm')) {
-                            return { isError: true, reason: 'global_dialog_error' };
+                    // 1. Tìm BẤT KỲ text lỗi VISIBLE nào trên toàn trang (không giới hạn dialog/alert)
+                    // VETO ở trên đã đảm bảo không false-positive khi đang generating.
+                    const allVisible = Array.from(document.querySelectorAll('span, div, p, h1, h2, h3, [role="alert"], [role="alertdialog"]'));
+                    for (let el of allVisible) {
+                        if (!isVisible(el)) continue;
+                        const t = (el.innerText || '').trim().toLowerCase();
+                        // Chỉ match text ngắn (< 200 chars) để tránh match cả layout container
+                        if (t.length > 200 || t.length < 3) continue;
+                        if (t.includes('đã xảy ra lỗi') || t.includes('something went wrong') ||
+                            t.includes('không thành công') || t.includes('unsuccessful') ||
+                            t.includes('rất tiếc') || t.includes('vi phạm chính sách') ||
+                            t.includes('vi phạm')) {
+                            return { isError: true, reason: 'inline_error_text' };
                         }
                     }
 
-                    // Không còn quét lịch sử lỗi bằng tọa độ Y nữa. Điều này ngăn chặn tình hướng "Poison Pill"
-                    // (Lỗi cũ nằm trên đỉnh lịch sử làm tất cả Job mới đều bị đánh giá là lỗi).
                     return { isError: false, reason: 'no_error_indicators' };
                 });
 
@@ -1680,65 +1854,47 @@ class AutomationWorker {
                     hasError = true;
                 }
 
-                // --- NEW ROUND 6 LOGIC: SOFT RETRY FOR VALIDATION ERRORS ---
-                if (hasError && (currentErrorReason === 'global_dialog_error' || currentErrorReason === 'validation_error')) {
-                    this.log(`⚠️ Phát hiện Video lỗi (Không thành công / Vi phạm). Đang tìm nút Thử Lại (Refresh) màu xám để chạy lại In-Place...`);
+                // --- FIXED LOGIC: DISCARD IN-PLACE RETRY & FORCE RELOAD ON 3-BUTTON VALIDATION ERRORS ---
+                const hasThreeButtonError = await page.evaluate(() => {
+                    const isVisible = (el) => el.offsetParent !== null;
+                    const hasIcon = (b) => b.querySelector('svg') || b.querySelector('i.google-symbols, i[class*="google-symbols"], mat-icon, i[class*="material"]');
 
-                    const clickedRetry = await page.evaluate(() => {
-                        // Nút Thử Lại là nút đầu tiên trong cụm 3 icon button (Refresh, Undo, Delete) ở cuối màn hình lịch sử
-                        const isVisible = (el) => el.offsetParent !== null;
-                        const buttonContainers = Array.from(document.querySelectorAll('div')).filter(container => {
-                            if (!isVisible(container)) return false;
-                            const rect = container.getBoundingClientRect();
-                            if (rect.height > 100 || rect.width > 400 || rect.width < 50) return false;
-                            if (rect.y > window.innerHeight - 250) return false; // Ignore Text Editor box
+                    const buttonContainers = Array.from(document.querySelectorAll('div')).filter(container => {
+                        if (!isVisible(container)) return false;
+                        const rect = container.getBoundingClientRect();
+                        // Giữ chặt: loại bỏ card/container lớn (video thành công cũng có 3 nút tải/hoàn tác/xóa)
+                        if (rect.height > 200 || rect.width > 400 || rect.width < 50) return false;
+                        if (rect.y > window.innerHeight - 250) return false; // Bỏ qua thanh Editor
 
-                            const btns = Array.from(container.querySelectorAll('button, [role="button"]')).filter(b => isVisible(b) && b.querySelector('svg'));
-                            return btns.length === 3; // Lỗi card always has exactly 3 action buttons
+                        const btns = Array.from(container.querySelectorAll('button, [role="button"]')).filter(b => isVisible(b) && hasIcon(b));
+                        if (btns.length !== 3) return false;
+
+                        // PHẢI có nút "Thử lại/Retry" để xác nhận đây là error card, không phải success card
+                        const hasRetryButton = btns.some(b => {
+                            const lbl = (b.getAttribute('aria-label') || b.innerText || b.getAttribute('data-tooltip') || '').toLowerCase();
+                            return lbl.includes('thử lại') || lbl.includes('retry') || lbl.includes('lời nhắc khác') || lbl.includes('thử câu lệnh') || lbl.includes('tạo lại') || lbl.includes('regenerate');
                         });
+                        if (hasRetryButton) return true;
 
-                        if (buttonContainers.length > 0) {
-                            // Lấy cụm nút mới nhất (nằm ở vị trí Y thấp nhất hoặc cuối DOM tree hợp lệ)
-                            // Thường cái thông báo lỗi mới tinh nó nằm tít dưới đáy mảng
-                            const targetContainer = buttonContainers[buttonContainers.length - 1];
-                            const retryBtn = Array.from(targetContainer.querySelectorAll('button, [role="button"]'))[0];
-                            if (retryBtn) {
-                                retryBtn.click();
-                                return true;
-                            }
-                        }
-
-                        // Fallback: Tìm mù quáng các nút có SVG hình mũi tên ngoáy tròn (Refresh path)
-                        const refreshBtns = Array.from(document.querySelectorAll('button, [role="button"]')).filter(b => {
-                            if (!isVisible(b)) return false;
-
-                            // Check aria
-                            const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-                            if (aria.includes('thử lại') || aria.includes('retry') || aria.includes('regenerate')) return true;
-
-                            // Check SVG Path cho nút Refresh/Sync
-                            const hasRefreshSvg = b.querySelector('svg path[d*="12 4V1L8 5l4 4V6c3.31"]'); // Common material refresh path
-                            return !!hasRefreshSvg;
+                        // Fallback: kiểm tra text lỗi TRONG CHÍNH container này (không leo lên parent)
+                        const errTexts = Array.from(container.querySelectorAll('span, div, p')).filter(el => isVisible(el));
+                        return errTexts.some(el => {
+                            const t = el.innerText.trim().toLowerCase();
+                            if (t.length > 100) return false; // Bỏ qua text quá dài
+                            return t.includes('vi phạm chính sách') || t.includes('không thể tạo') || t.includes('vi phạm') ||
+                                   t.includes('không thành công') || t.includes('xảy ra lỗi') || t.includes('rất tiếc');
                         });
-
-                        if (refreshBtns.length > 0) {
-                            refreshBtns[refreshBtns.length - 1].click(); // Click nút dưới cùng
-                            return true;
-                        }
-
-                        return false;
                     });
 
-                    if (clickedRetry) {
-                        this.log(`✅ Đã ấn nút "Thử Lại" trên Card Lỗi thành công. Đặt lại đồng hồ đếm ngược 90s...`);
-                        await this.sleep(3000); // Đợi mạng gửi lệnh
-                        hasError = false;
-                        currentErrorReason = '';
-                        i = 0; // Reset vòng lặp siêu to khổng lồ
-                        continue; // Tiếp tục quay lại đầu vòng lặp quét Render
-                    } else {
-                        this.log(`❌ Không thể tìm thấy nút "Thử Lại" trên giao diện lỗi. Bắt buộc kết thúc Job...`);
-                    }
+                    return buttonContainers.length > 0;
+                });
+
+                if (hasThreeButtonError) {
+                    this.log(`🔄 Phát hiện hộp thoại lỗi 3 nút gây treo (Inline Error Card). TIẾN HÀNH BẮT BUỘC RELOAD LẠI TRANG...`);
+                    await page.reload({ waitUntil: 'networkidle2' });
+                    this.settingsApplied = false;
+                    await this.sleep(4000);
+                    throw new Error("MEDIA_GENERATION_FAILED: Phát hiện hộp thoại lỗi 3 nút gây treo. Bắt buộc Auto-reloaded để phục hồi.");
                 }
 
                 if (hasError) {
@@ -1753,55 +1909,20 @@ class AutomationWorker {
                     throw new Error('SESSION_DROPPED: Google asked to Sign in again mid-render.');
                 }
 
-                // --------- Random Clear Check ---------
-                const timeElapsedMs = i * 2000 + 3000;
-                if (timeElapsedMs >= clearPromptTimeMs && !clearedPromptDuringRender) {
-                    this.log(`Random clear interval reached (${Math.round(timeElapsedMs / 1000)}s / 90s). Clicking X to clear prompt box...`);
-                    await page.evaluate(() => {
-                        const allBtns = Array.from(document.querySelectorAll('button'));
-                        for (const btn of allBtns) {
-                            const spans = Array.from(btn.querySelectorAll('span'));
-                            const hasXLabel = spans.some(s => s.textContent.trim() === 'Xoá câu lệnh' || (s.textContent.trim().toLowerCase() === 'clear prompt'));
-                            const googleIcon = btn.querySelector('i.google-symbols, i[class*="google-symbols"]');
-                            if (hasXLabel || (googleIcon && googleIcon.textContent.trim() === 'close')) {
-                                const r = btn.getBoundingClientRect();
-                                if (r.width > 0 && r.height > 0) { btn.click(); return; }
-                            }
-                        }
-                    });
-                    clearedPromptDuringRender = true;
-                }
-
-                // Cuộn lên đầu trang trong lúc chờ render
-                try {
-                    await page.evaluate(() => window.scrollTo(0, 0));
-                } catch (scrollErr) { }
-
-                // Simulate human scrolling randomly while waiting for generation
-                if (Math.random() > 0.6) {
-                    await this.humanScroll(page);
-                }
-
-                // Check for percentage progress indicators (like "3%") or generating text and get its coordinates
+                // Check for percentage progress indicators ("3%")
                 const genInfo = await page.evaluate(() => {
                     const texts = Array.from(document.querySelectorAll('span, div, p'));
                     const el = texts.find(el => {
                         const t = el.textContent.trim();
                         if (t.includes('Đang tạo') || t.includes('Generating')) return true;
-                        // Match strings like "3%", "10%", "99%" and length <= 5 to avoid matching random long text with a % in it
+                        // Match strings like "3%", "10%", "99%" and length <= 5
                         return t.endsWith('%') && t.length > 1 && t.length <= 5 && !isNaN(parseInt(t));
                     });
 
-                    // KIỂM TRA ĐANG RENDER THỰC SỰ: Nút "Hủy" hoặc "Cancel" phải xuất hiện trên màn hình
-                    // Nút submit lúc upload ảnh cũng bị khóa, nhưng KHÔNG có nút Cancel.
-                    const cancelBtns = Array.from(document.querySelectorAll('button, [role="button"]')).filter(b => {
-                        if (b.offsetParent === null) return false;
-                        const t = b.innerText.trim().toLowerCase();
-                        return t === 'hủy' || t === 'cancel' || t === 'stop' || t === 'dừng';
-                    });
-                    const isTrulyGenerating = cancelBtns.length > 0;
+                    if (el) {
+                        const percentStr = el.textContent.trim().replace('%', '');
+                        const percentInt = parseInt(percentStr);
 
-                    if (el && isTrulyGenerating) {
                         let node = el;
                         let targetRect = el.getBoundingClientRect();
                         for (let i = 0; i < 6; i++) {
@@ -1814,10 +1935,24 @@ class AutomationWorker {
                             }
                             if (node) node = node.parentElement;
                         }
-                        return { found: true, x: targetRect.x + targetRect.width / 2, y: targetRect.y + targetRect.height / 2 };
+                        return { found: true, percent: isNaN(percentInt) ? 0 : percentInt, x: targetRect.x + targetRect.width / 2, y: targetRect.y + targetRect.height / 2 };
                     }
-                    return { found: false };
+                    return { found: false, percent: 0 };
                 });
+
+                // Scroll to top ONLY when generation percent is between 65 and 75
+                if (genInfo.found && genInfo.percent >= 65 && genInfo.percent <= 75 && !this.scrolledToTopDuringRender) {
+                    try {
+                        this.log(`Generation at ${genInfo.percent}%. Scrolling to top of page...`);
+                        await page.evaluate(() => window.scrollTo(0, 0));
+                        this.scrolledToTopDuringRender = true;
+                    } catch (scrollErr) { }
+                }
+
+                // Simulate human scrolling randomly while waiting for generation
+                if (Math.random() > 0.6) {
+                    await this.humanScroll(page);
+                }
 
                 if (genInfo.found) {
                     if (!this.hasSeenGenerating) {
@@ -1826,8 +1961,65 @@ class AutomationWorker {
                     }
                     targetMediaCoords = { x: genInfo.x, y: genInfo.y };
                 } else if (this.hasSeenGenerating) {
-                    this.log('Generation appears complete (progress indicator disappeared). Proceeding to download...');
-                    await this.sleep(4000); // Buffer after generation finishes
+                    // CRITICAL: % indicator biến mất có thể vì HOÀN THÀNH hoặc vì LỖI.
+                    // Phải kiểm tra lại error trước khi kết luận video xong!
+                    this.log('Progress indicator disappeared. Verifying completion vs error...');
+                    await this.sleep(4000); // Buffer
+
+                    // Re-check for error indicators after the buffer
+                    const postGenErrorCheck = await page.evaluate(() => {
+                        const isVisible = (el) => el.offsetParent !== null;
+
+                        // 1. Check for error dialog text
+                        const allElements = Array.from(document.querySelectorAll('span, div, p, [role="alert"], [role="alertdialog"]'));
+                        const hasErrorText = allElements.some(el => {
+                            if (!isVisible(el)) return false;
+                            const t = (el.innerText || '').trim().toLowerCase();
+                            return t.includes('đã xảy ra lỗi') || t.includes('something went wrong') ||
+                                   t.includes('không thành công') || t.includes('unsuccessful') ||
+                                   t.includes('rất tiếc') || t.includes('vi phạm');
+                        });
+                        if (hasErrorText) return { isError: true, reason: 'post_gen_error_dialog' };
+
+                        // 2. Check for 3-button error card (CÓ NÚT "Thử lại/Retry")
+                        const hasIcon = (b) => b.querySelector('svg') || b.querySelector('i.google-symbols, i[class*="google-symbols"], mat-icon');
+                        const errorCards = Array.from(document.querySelectorAll('div')).filter(container => {
+                            if (!isVisible(container)) return false;
+                            const rect = container.getBoundingClientRect();
+                            if (rect.height > 200 || rect.width > 400 || rect.width < 50) return false;
+                            if (rect.y > window.innerHeight - 250) return false;
+                            const btns = Array.from(container.querySelectorAll('button, [role="button"]')).filter(b => isVisible(b) && hasIcon(b));
+                            if (btns.length !== 3) return false;
+
+                            // Phải có nút retry HOẶC text lỗi trong container
+                            const hasRetry = btns.some(b => {
+                                const lbl = (b.getAttribute('aria-label') || b.innerText || b.getAttribute('data-tooltip') || '').toLowerCase();
+                                return lbl.includes('thử lại') || lbl.includes('retry') || lbl.includes('tạo lại') || lbl.includes('regenerate');
+                            });
+                            if (hasRetry) return true;
+
+                            const errTexts = Array.from(container.querySelectorAll('span, div, p')).filter(el => isVisible(el));
+                            return errTexts.some(el => {
+                                const t = el.innerText.trim().toLowerCase();
+                                if (t.length > 100) return false;
+                                return t.includes('không thành công') || t.includes('xảy ra lỗi') || t.includes('rất tiếc');
+                            });
+                        });
+                        if (errorCards.length > 0) return { isError: true, reason: 'post_gen_3button_error' };
+
+                        // NOTE: Không kiểm tra media existence vì video CŨ từ job trước luôn tồn tại trên trang
+                        // → sẽ pass check dù job hiện tại đã lỗi. Chỉ dựa vào error text + 3-button detection.
+
+                        return { isError: false };
+                    });
+
+                    if (postGenErrorCheck.isError) {
+                        this.log(`🚨 Post-generation verification FAILED [Reason: ${postGenErrorCheck.reason}]. This was NOT a successful render!`);
+                        hasError = true;
+                        break;
+                    }
+
+                    this.log('✅ Post-generation verification PASSED. Media confirmed on page. Proceeding to download...');
                     break;
                 } else {
                     // Has not started generating yet or indicator hasn't appeared. Just wait.
@@ -1837,8 +2029,25 @@ class AutomationWorker {
             page.off('console', consoleHandler);
             page.off('response', responseHandler);
 
-            if (!clearedPromptDuringRender && !hasError) {
-                this.log('Video finished before the random clear time hit. Clicking X to clear prompt now...');
+            if (hasError) {
+                this.log(`Generation failed because Google returned an Error Message...`);
+                await page.reload({ waitUntil: 'networkidle2' });
+                this.settingsApplied = false;
+                await this.sleep(4000);
+                throw new Error("MEDIA_GENERATION_FAILED: Generation blocked by Google (Error screen or Network). Auto-reloaded for next attempt.");
+            }
+
+            if (!this.hasSeenGenerating) {
+                this.log('ERROR: The wait time expired but no % generation indicator was ever detected. The submit prompt might have failed or the UI is stuck. Forcing retry...');
+                await page.reload({ waitUntil: 'networkidle2' });
+                this.settingsApplied = false;
+                await this.sleep(4000);
+                throw new Error('SUBMISSION_FAILED: Never saw the rendering progress % indicator.');
+            }
+
+            // 4.5. CLEAR PROMPT BOX (Only clear right before download step)
+            this.log('Generation completed. Clicking X to clear prompt box to prevent UI overlap before download...');
+            try {
                 await page.evaluate(() => {
                     const allBtns = Array.from(document.querySelectorAll('button'));
                     for (const btn of allBtns) {
@@ -1851,18 +2060,13 @@ class AutomationWorker {
                         }
                     }
                 });
+            } catch (clearErr) {
+                this.log('Error clearing prompt box (UI may have detached): ' + clearErr.message);
             }
-
-            if (hasError) {
-                this.log(`Generation failed because Google returned an Error Message...`);
-                await page.reload({ waitUntil: 'networkidle2' });
-                this.settingsApplied = false;
-                await this.sleep(4000);
-                throw new Error("MEDIA_GENERATION_FAILED: Generation blocked by Google (Error screen or Network). Auto-reloaded for next attempt.");
-            }
+            await this.sleep(1000);
 
             // 5. Download
-            const resolution = job.settings?.videoSettings?.resolution || '720p';
+            const resolution = job.settings?.videoSettings?.resolution || '1080p';
             this.log(`Downloading (${job.TYPE_VIDEO === 'IMG' ? 'Image' : 'Video'}) at ${resolution}...`);
             await this.handleDownload(job.VIDEO_NAME, tempOutputDir, outputDir, job.TYPE_VIDEO, targetMediaCoords, resolution);
 
@@ -1887,7 +2091,7 @@ class AutomationWorker {
         // Obsolete as we reload the page entirely now, but keep for compatibility if called elsewhere
     }
 
-    async handleDownload(targetName, tempOutputDir, finalOutputDir, type, targetMediaCoords = null, resolution = '720p') {
+    async handleDownload(targetName, tempOutputDir, finalOutputDir, type, targetMediaCoords = null, resolution = '1080p') {
         const page = this.page;
 
         try {
@@ -1898,28 +2102,38 @@ class AutomationWorker {
                 // --- Image: hover → 3-dot menu → Tải xuống → 1K ---
                 this.log('Hovering over the latest image to reveal action buttons...');
 
-                // Find the first large visible <img> element (the generated image)
+                // Find the highest visible <img> element (the newest generated image)
                 const imgCard = await page.evaluateHandle(() => {
                     const imgs = Array.from(document.querySelectorAll('img'));
+                    let bestImg = null;
+                    let bestY = Infinity;
                     for (const img of imgs) {
                         const rect = img.getBoundingClientRect();
                         const src = img.src || '';
-                        if (rect.width > 100 && rect.height > 100 && !src.includes('avatar') && !src.includes('logo')) return img;
+                        if (rect.width > 100 && rect.height > 100 && !src.includes('avatar') && !src.includes('logo')) {
+                            if (rect.y >= 0 && rect.y < bestY) {
+                                bestY = rect.y;
+                                bestImg = img;
+                            }
+                        }
                     }
-                    return null;
+                    return bestImg;
                 });
 
                 const hasImgCard = await page.evaluate(el => el instanceof Element, imgCard);
 
                 if (hasImgCard) {
-                    this.log('Scrolling image into view to get fresh coordinates...');
-                    await page.evaluate(el => el.scrollIntoView({ behavior: 'instant', block: 'center' }), imgCard);
+                    this.log('Scrolling to top of page to get accurate coordinate mapping...');
+                    await page.evaluate(() => window.scrollTo(0,0));
                     await this.sleep(500);
 
+                    this.log('Image element found, calculating live bounding box...');
                     const box = await imgCard.boundingBox();
                     if (box) {
                         targetMediaCoords = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
                     }
+                } else if (targetMediaCoords) {
+                    this.log('WARNING: Image element not found in DOM yet. Falling back to earlier tracker coordinates (might be stale if page scrolled).');
                 }
 
                 if (targetMediaCoords) {
@@ -2048,49 +2262,59 @@ class AutomationWorker {
                 // --- Video: hover latest media → 3-dot context menu → Tải xuống → 720p ---
                 this.log('Hovering over the latest media item to reveal action buttons...');
 
-                // Find the first large visible media element (video, canvas, or img card)
+                // Find the highest visible media element (newest video, canvas, or img card)
                 const videoCard = await page.evaluateHandle(() => {
+                    let bestEl = null;
+                    let bestY = Infinity;
+
+                    const checkElement = (el) => {
+                        const r = el.getBoundingClientRect();
+                        if (r.width > 100 && r.height > 100 && r.y >= 0 && r.y < bestY) {
+                            bestY = r.y;
+                            bestEl = el;
+                        }
+                    };
+
                     // 1. Try <video> tags
-                    for (const v of Array.from(document.querySelectorAll('video'))) {
-                        const r = v.getBoundingClientRect();
-                        if (r.width > 100 && r.height > 100) return v;
-                    }
-                    // 2. Try <canvas> tags (some sites render video on canvas)
-                    for (const v of Array.from(document.querySelectorAll('canvas'))) {
-                        const r = v.getBoundingClientRect();
-                        if (r.width > 100 && r.height > 100) return v;
-                    }
-                    // 3. Try large <img> that looks like a thumbnail/result
-                    for (const v of Array.from(document.querySelectorAll('img'))) {
-                        const r = v.getBoundingClientRect();
+                    Array.from(document.querySelectorAll('video')).forEach(checkElement);
+
+                    // 2. Try <canvas> tags
+                    Array.from(document.querySelectorAll('canvas')).forEach(checkElement);
+
+                    // 3. Try large <img>
+                    Array.from(document.querySelectorAll('img')).forEach(v => {
                         const src = v.src || '';
-                        if (r.width > 100 && r.height > 100 && !src.includes('avatar') && !src.includes('logo') && !src.includes('icon')) return v;
-                    }
-                    // 4. Try a div/section that contains a play button or video icon
+                        if (!src.includes('avatar') && !src.includes('logo') && !src.includes('icon')) {
+                            checkElement(v);
+                        }
+                    });
+
+                    // 4. Try play buttons
                     const playBtns = Array.from(document.querySelectorAll('[aria-label*="play"], [aria-label*="Play"], mat-icon'));
                     for (const btn of playBtns) {
                         if (btn.textContent && btn.textContent.trim() === 'play_circle') {
                             const parent = btn.closest('div[class], section') || btn.parentElement;
-                            if (parent) {
-                                const r = parent.getBoundingClientRect();
-                                if (r.width > 100 && r.height > 100) return parent;
-                            }
+                            if (parent) checkElement(parent);
                         }
                     }
-                    return null;
+
+                    return bestEl;
                 });
 
                 const hasVideoCard = await page.evaluate(el => el instanceof Element, videoCard);
 
                 if (hasVideoCard) {
-                    this.log('Scrolling video into view to get fresh coordinates...');
-                    await page.evaluate(el => el.scrollIntoView({ behavior: 'instant', block: 'center' }), videoCard);
+                    this.log('Scrolling to top of page to get accurate coordinate mapping...');
+                    await page.evaluate(() => window.scrollTo(0,0));
                     await this.sleep(500);
 
+                    this.log('Video element found, calculating live bounding box...');
                     const box = await videoCard.boundingBox();
                     if (box) {
                         targetMediaCoords = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
                     }
+                } else if (targetMediaCoords) {
+                    this.log('WARNING: Video element not found in DOM yet. Falling back to earlier tracker coordinates (might be stale if page scrolled).');
                 }
 
                 if (targetMediaCoords) {

@@ -23,8 +23,11 @@
         { key: "IMG", label: "BÂY GIỜ HÃY CLICK CHUYỂN SANG TAB ẢNH (Image) BÊN TRONG BẢNG NÀY. Xong ấn phím Space." },
 
         // Đo đạc lại tỉ lệ riêng cho Image (Vì Image có thêm vị trí khác Video)
-        { key: "ratio_img_16_9", label: "Đưa chuột vào nút tỉ lệ: Ngang (16:9)" },
-        { key: "ratio_img_9_16", label: "Đưa chuột vào nút tỉ lệ: Dọc (9:16)" },
+        { key: "ratio_img_16_9", label: "Đưa chuột vào nút tỉ lệ ảnh: Ngang (16:9)" },
+        { key: "ratio_img_9_16", label: "Đưa chuột vào nút tỉ lệ ảnh: Dọc (9:16)" },
+        { key: "ratio_img_1_1", label: "Đưa chuột vào nút tỉ lệ ảnh: Vuông (1:1)" },
+        { key: "ratio_img_4_3", label: "Đưa chuột vào nút tỉ lệ ảnh: Ngang (4:3)" },
+        { key: "ratio_img_3_4", label: "Đưa chuột vào nút tỉ lệ ảnh: Dọc (3:4)" },
 
         { key: "count_img_1", label: "Đưa chuột vào Đầu ra/Số lượng ảnh: x1" },
         { key: "count_img_2", label: "Đưa chuột vào Đầu ra/Số lượng ảnh: x2" },
@@ -41,7 +44,7 @@
         // Cài đặt View Mode (Bảng hiển thị)
         { key: "trigger_view_mode", label: "Đưa chuột vào nút mở Bảng VIEW MODE (Cài đặt hiển thị) trên góc phải màn hình bên ngoài." },
         { key: "view_batch", label: "Mở bảng View Mode. Đưa chuột vào ô: Batch (Theo lô)" },
-        { key: "view_grid_L", label: "Đưa chuột vào Kích thước lưới: L (Lớn)" },
+        { key: "view_grid_S", label: "Đưa chuột vào Kích thước lưới: S" },
 
         { key: "view_sound_off", label: "Đưa chuột vào: Âm thanh khi di chuột -> Đang tắt" },
         { key: "view_info_on", label: "Đưa chuột vào: Hiện thông tin chi tiết -> Đang bật" },
@@ -100,6 +103,9 @@
     ratioImage: {
         '16:9': { x: ${recordedCoords.ratio_img_16_9.x}, y: ${recordedCoords.ratio_img_16_9.y} },
         '9:16': { x: ${recordedCoords.ratio_img_9_16.x}, y: ${recordedCoords.ratio_img_9_16.y} },
+        '1:1': { x: ${recordedCoords.ratio_img_1_1.x}, y: ${recordedCoords.ratio_img_1_1.y} },
+        '4:3': { x: ${recordedCoords.ratio_img_4_3.x}, y: ${recordedCoords.ratio_img_4_3.y} },
+        '3:4': { x: ${recordedCoords.ratio_img_3_4.x}, y: ${recordedCoords.ratio_img_3_4.y} }
     },
     countVideo: {
         '1': { x: ${recordedCoords.count_1.x}, y: ${recordedCoords.count_1.y} },

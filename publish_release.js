@@ -2,12 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const pkg = require('./package.json');
 
-const GITHUB_TOKEN = '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';
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const REPO_OWNER = 'starbuckskohii-rgb';
 const REPO_NAME = 'veo3auto';
 const VERSION = pkg.version;
 const TAG_NAME = `v${VERSION}`;
-const RELEASE_NAME = `Veo3 Auto v${VERSION} (Right-Click Download Fix)`;
+const RELEASE_NAME = `Veo3 Auto v${VERSION} (Fix Brave Browser Font/Icon Rendering)`;
 const ASSETS_TO_UPLOAD = [
     { path: path.resolve(`dist/Veo3.Auto.Setup.${VERSION}.exe`), name: `Veo3.Auto.Setup.${VERSION}.exe` },
     { path: path.resolve('dist/latest.yml'), name: 'latest.yml' }

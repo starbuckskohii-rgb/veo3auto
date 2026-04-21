@@ -8,7 +8,7 @@ const fs = require('fs');
 const AccountManager = require('./accountManager');
 const ProxyManager = require('./proxyManager');
 const AutomationService = require('./automation'); // We will create this next
-
+const auth = require('./auth');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
@@ -16,6 +16,27 @@ const io = new Server(server, { cors: { origin: "*" } });
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 app.use(cors());
+
+// Allow UI to check if auth is required
+app.get('/api/auth-status', (req, res) => {
+    res.json({ disabled: process.env.NO_AUTH === 'true' });
+});
+
+// `/api/version` allowed without auth so UI can display it
+app.get('/api/version', (req, res) => {
+    try {
+        const pkg = require('./package.json');
+        res.json({ version: pkg.version });
+    } catch {
+        res.json({ version: 'Unknown' });
+    }
+});
+
+// --- BẢO MẬT API BẰNG FIREBASE AUTH ---
+if (process.env.NO_AUTH !== 'true') {
+    auth.initFirebase();
+    app.use('/api', auth.requireAuth); // Requires auth for all other /api routes
+}
 
 const userDataPath = process.env.USER_DATA_PATH || process.cwd();
 const accountManager = new AccountManager(userDataPath);
@@ -80,15 +101,6 @@ app.get('/api/pick-excel', (req, res) => {
 app.get('/api/pick-folder', (req, res) => {
     const path = pickFolder();
     res.json({ path });
-});
-
-app.get('/api/version', (req, res) => {
-    try {
-        const pkg = require('./package.json');
-        res.json({ version: pkg.version });
-    } catch {
-        res.json({ version: 'Unknown' });
-    }
 });
 
 // --- Browser Install API ---
@@ -168,6 +180,10 @@ app.get('/api/accounts', (req, res) => {
 });
 
 app.post('/api/accounts', (req, res) => {
+    const existing = accountManager.getAccounts().some(acc => acc.profileName === req.body.profileName || acc.email === req.body.email);
+    if (existing) {
+        return res.status(400).json({ error: 'Tài khoản này đã tồn tại trong hệ thống!' });
+    }
     const newTarget = accountManager.addAccount(req.body);
     res.json(newTarget);
 });
