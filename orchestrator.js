@@ -38,8 +38,38 @@ class JobOrchestrator extends EventEmitter {
                     throw e;
                 }
 
+                // FIX 2: UNUSUAL_ACTIVITY_BAN — close browser, xóa cookies nhiễm, relaunch với profile clone sạch
+                // Không tính vào localRetryCount (không penalty) vì đây là lỗi môi trường, không phải lỗi logic
+                if (e.message.includes('UNUSUAL_ACTIVITY_BAN')) {
+                    this.worker.log('[Orchestrator] UNUSUAL_ACTIVITY_BAN (HTTP 403). Closing browser...');
+                    try {
+                        await this.worker.close();
+                    } catch (closeErr) {
+                        this.worker.log(`[Orchestrator] close() error (non-fatal): ${closeErr.message}`);
+                    }
+                    this.worker.browser = null;
+                    this.worker.page = null;
+
+                    // Xóa cookies nhiễm khỏi profile hiện tại, profile gốc và Cold Snapshot
+                    // → lần launch() tiếp theo sẽ tạo shadow clone từ profile sạch (không có cookie cũ)
+                    this.worker.log('[Orchestrator] Purging tainted cookies from profile + snapshot...');
+                    try {
+                        await this.worker.clearGoogleFlowCookies();
+                    } catch (purgeErr) {
+                        this.worker.log(`[Orchestrator] Cookie purge error (non-fatal): ${purgeErr.message}`);
+                    }
+
+                    // Hoàn lại 1 retry slot để không bị penalize
+                    this.localRetryCount = Math.max(0, this.localRetryCount - 1);
+                    this.worker.log('[Orchestrator] Profile cleaned. Next iteration will clone fresh profile via launch().');
+                    await this.worker.sleep(5000);
+                    continue;
+                }
+
+
                 // CHỈ LOGOUT NẾU ĐÂY LÀ LỖI TẠO MEDIA (3 Nút hoặc ZodError)
                 if (e.message.includes('MEDIA_GENERATION_FAILED')) {
+
                     this.worker.consecutiveErrorCount++; // Biến đếm lỗi liên tiếp toàn cực
                     this.worker.log(`[Orchestrator] Media Error (Local Retry ${this.localRetryCount}/${this.maxLocalRetries}): ${e.message}`);
 
