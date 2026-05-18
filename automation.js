@@ -227,31 +227,39 @@ class AutomationService {
 
             // Check if it's time for a Long Sleep
             if (now > this.nextLongSleepTime) {
-                this.isLongSleeping = true;
-                this.log(`⚠️ Tới giờ nghỉ định kỳ (Long Sleep). Đang chờ các luồng hiện tại hoàn thành việc lưu video...`);
+                if (this.workerCount <= 3) {
+                    // Nếu chạy <= 3 luồng, loại bỏ chờ reset IP hoàn toàn
+                    this.log(`⏭️ Long Sleep bị bỏ qua (chế độ ≤ 3 luồng, hiện tại: ${this.workerCount} luồng).`);
+                    this.nextLongSleepTime = Date.now() + 60 * 60 * 1000;
+                } else {
+                    this.isLongSleeping = true;
+                    this.log(`⚠️ Tới giờ nghỉ định kỳ (Long Sleep). Đang chờ các luồng hiện tại hoàn thành việc lưu video...`);
 
-                // Wait until all in-progress jobs finish
-                while (this.inProgressJobs.size > 0) {
-                    if (!this.isRunning) break;
-                    await this.sleep(2000);
-                }
-
-                if (this.isRunning) {
-                    this.longSleepCount++;
-                    // Sleep duration: 5 mins, 10 mins, 15 mins...
-                    const sleepMins = this.longSleepCount * 5;
-                    this.log(`💤 [LONG SLEEP] Hệ thống bắt đầu nghỉ ${sleepMins} phút để giảm thiểu rủi ro bị block IP...`);
-
-                    for (let i = 0; i < sleepMins * 60; i++) {
+                    // Wait until all in-progress jobs finish
+                    while (this.inProgressJobs.size > 0) {
                         if (!this.isRunning) break;
-                        await this.sleep(1000);
+                        await this.sleep(2000);
                     }
 
-                    this.log(`✅ [LONG SLEEP] Hoàn thành thời gian nghỉ. Tiếp tục công việc!`);
-                }
+                    if (this.isRunning) {
+                        this.longSleepCount++;
+                        // Cycle: 5m, 10m, ... 70m. Then reset back to 5m.
+                        // 1: 5, 2: 10 ... 14: 70. 15: 5
+                        let sleepFactor = ((this.longSleepCount - 1) % 14) + 1;
+                        const sleepMins = sleepFactor * 5;
+                        this.log(`💤 [LONG SLEEP] Hệ thống bắt đầu nghỉ ${sleepMins} phút để giảm thiểu rủi ro bị block IP...`);
 
-                this.isLongSleeping = false;
-                this.nextLongSleepTime = Date.now() + 60 * 60 * 1000; // Reset next break to 1 hour from NOW
+                        for (let i = 0; i < sleepMins * 60; i++) {
+                            if (!this.isRunning) break;
+                            await this.sleep(1000);
+                        }
+
+                        this.log(`✅ [LONG SLEEP] Hoàn thành thời gian nghỉ. Tiếp tục công việc!`);
+                    }
+
+                    this.isLongSleeping = false;
+                    this.nextLongSleepTime = Date.now() + 60 * 60 * 1000; // Reset next break to 1 hour from NOW
+                }
             }
 
             if (this.isLongSleeping) {
@@ -353,9 +361,14 @@ class AutomationService {
 
             // Random delay between 5s to 30s after every job finishing BEFORE accepting next job
             if (this.isRunning && worker) {
-                const randomDelay = Math.floor(Math.random() * (30000 - 5000 + 1)) + 5000;
-                this.log(`[Worker ${worker.id}] Job hoàn tất (STATUS: ${jobData.STATUS || 'Completed/Failed'}). Nghỉ ngắn ngẫu nhiên ${Math.round(randomDelay / 1000)}s trước khi nhận Job mới...`);
-                await this.sleep(randomDelay);
+                if (this.workerCount <= 3) {
+                    // Nếu chạy <= 3 luồng, loại bỏ thời gian nghỉ giữa các job
+                    this.log(`[Worker ${worker.id}] Job hoàn tất. Tiếp tục ngay (vì cấu hình <= 3 luồng không có chờ).`);
+                } else {
+                    const randomDelay = Math.floor(Math.random() * (30000 - 5000 + 1)) + 5000;
+                    this.log(`[Worker ${worker.id}] Job hoàn tất (STATUS: ${jobData.STATUS || 'Completed/Failed'}). Nghỉ ngắn ngẫu nhiên ${Math.round(randomDelay / 1000)}s trước khi nhận Job mới...`);
+                    await this.sleep(randomDelay);
+                }
                 worker.isBusy = false;
             }
         }
@@ -376,13 +389,18 @@ class AutomationService {
         const N = this.workerCount > 0 ? this.workerCount : 1;
 
         // Base gap between each thread's submit action
-        const baseWaitMs = Math.floor(90000 / N);
+        const naturalGap = Math.floor(90000 / N);
 
-        // Add ±30% randomness to seem human
-        const jitter = Math.floor((Math.random() * 0.6 - 0.3) * baseWaitMs);
+        // Enforce minimum 15s between ANY two submits to avoid IP flagging
+        // 4-6 workers: natural gap (15-22s) is already safe
+        // 7-20 workers: force minimum 15s gap → ~4 requests/min max
+        const MIN_GAP_MS = 15000;
+        const baseWaitMs = Math.max(MIN_GAP_MS, naturalGap);
 
-        // Ensure delay is at least 3 seconds (3000ms) to avoid spamming
-        const lockWaitMs = Math.max(3000, baseWaitMs + jitter);
+        // Add random 2-3s on top to look human
+        const jitter = 2000 + Math.floor(Math.random() * 1000);
+
+        const lockWaitMs = baseWaitMs + jitter;
 
         if (!this.firstSubmitOccurred) {
             this.firstSubmitOccurred = true;
@@ -414,6 +432,8 @@ class AutomationService {
     }
 
     async requestLaunchLock(workerId) {
+        if (this.workerCount <= 3) return;
+
         // Enforce a strict randomized delay (3000ms base) between ANY worker launching a browser
         const lockWaitMs = 3000 + Math.floor(Math.random() * 2000); // 3s - 5s
 
